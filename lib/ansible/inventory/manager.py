@@ -424,6 +424,8 @@ class InventoryManager(object):
                 elif order not in [None, 'inventory']:
                     raise AnsibleOptionsError("Invalid 'order' specified for inventory hosts: %s" % order)
 
+        if pattern_list and pattern_list[0] != 'localhost':
+            hosts = [h for h in hosts if h.name != 'localhost']
         return hosts
 
     def _evaluate_patterns(self, patterns):

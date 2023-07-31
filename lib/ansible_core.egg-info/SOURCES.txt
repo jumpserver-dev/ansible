@@ -54,7 +54,6 @@ docs/docsite/rst/404.rst
 docs/docsite/rst/ansible_index.rst
 docs/docsite/rst/core_index.rst
 docs/docsite/rst/api/index.rst
-docs/docsite/rst/collections/all_plugins.rst
 docs/docsite/rst/collections_guide/collections_downloading.rst
 docs/docsite/rst/collections_guide/collections_index.rst
 docs/docsite/rst/collections_guide/collections_installing.rst
