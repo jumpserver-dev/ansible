@@ -427,8 +427,12 @@ class InventoryManager(object):
         include_all = False
         if pattern == 'all':
             include_all = True
-        elif pattern_list and pattern_list[0] in ["*", "all"]:
-            include_all = True
+        elif pattern_list:
+            all_list = []
+            for pt in pattern_list:
+                all_list.extend(pt.split(','))
+            if '*' in all_list or 'all' in all_list:
+                include_all = True
         if not include_all:
             return hosts
         hosts = [h for h in hosts if h.name != 'localhost']
