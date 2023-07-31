@@ -153,7 +153,8 @@ class InventoryData(object):
         # if host is not in hosts dict
         if matching_host is None and hostname in C.LOCALHOST:
             # might need to create implicit localhost
-            matching_host = self._create_implicit_localhost(hostname)
+            # matching_host = self._create_implicit_localhost(hostname)
+            pass
 
         return matching_host
 
