@@ -33,7 +33,7 @@ from traceback import format_exc
 
 from jinja2.exceptions import TemplateSyntaxError, UndefinedError
 from jinja2.loaders import FileSystemLoader
-from jinja2.nativetypes import NativeEnvironment
+from jinja2.sandbox import SandboxedEnvironment as NativeEnvironment
 from jinja2.runtime import Context, StrictUndefined
 
 from ansible import constants as C

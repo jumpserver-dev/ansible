@@ -49,6 +49,9 @@ class Connection(ConnectionBase):
         self.cwd = None
         self.default_user = getpass.getuser()
 
+        if not os.environ.get("LOCAL_CONNECTION_ENABLED"):
+            raise AnsibleError("Local connection is disabled")
+
     def _connect(self):
         ''' connect to the local host; nothing to do here '''
 
