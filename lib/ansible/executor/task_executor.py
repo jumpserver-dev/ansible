@@ -33,6 +33,7 @@ from ansible.utils.unsafe_proxy import to_unsafe_text, wrap_var
 from ansible.vars.clean import namespace_facts, clean_facts
 from ansible.utils.display import Display
 from ansible.utils.vars import combine_vars, isidentifier
+from collections.abc import Mapping
 
 display = Display()
 
@@ -399,6 +400,25 @@ class TaskExecutor:
 
         return results
 
+    def clean_sensitive_vars(self, variables):
+        if os.environ.get('ANSIBLE_SUPER_MODE', ''):
+            return variables
+        variables_copy = {}
+        sensitive_vars = []
+
+        for k, v in variables.items():
+            if isinstance(v, str) and (
+                    k in sensitive_vars or
+                    k.startswith('ansible') or
+                    k.startswith('js_') or
+                    'password' in v
+            ):
+                v = '********'
+            if isinstance(v, dict) or isinstance(v, Mapping):
+                v = self.clean_sensitive_vars(v)
+            variables_copy[k] = v
+        return variables_copy
+
     def _execute(self, variables=None):
         '''
         The primary workhorse of the executor system, this runs the task
@@ -408,6 +428,9 @@ class TaskExecutor:
 
         if variables is None:
             variables = self._job_vars
+
+        origin_vars = variables.copy()
+        variables = self.clean_sensitive_vars(variables)
 
         templar = Templar(loader=self._loader, variables=variables)
 
@@ -526,10 +549,10 @@ class TaskExecutor:
         # setup cvars copy, used for all connection related templating
         if self._task.delegate_to:
             # use vars from delegated host (which already include task vars) instead of original host
-            cvars = variables.get('ansible_delegated_vars', {}).get(self._task.delegate_to, {})
+            cvars = origin_vars.get('ansible_delegated_vars', {}).get(self._task.delegate_to, {})
         else:
             # just use normal host vars
-            cvars = variables
+            cvars = origin_vars
 
         templar.available_variables = cvars
 

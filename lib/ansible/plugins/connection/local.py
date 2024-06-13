@@ -49,7 +49,7 @@ class Connection(ConnectionBase):
         self.cwd = None
         self.default_user = getpass.getuser()
 
-        if not os.environ.get("LOCAL_CONNECTION_ENABLED"):
+        if not os.environ.get("ANSIBLE_SUPER_MODE"):
             raise AnsibleError("Local connection is disabled")
 
     def _connect(self):

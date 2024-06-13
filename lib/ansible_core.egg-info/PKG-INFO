@@ -30,6 +30,11 @@ Classifier: Topic :: System :: Systems Administration
 Classifier: Topic :: Utilities
 Requires-Python: >=3.9
 License-File: COPYING
+Requires-Dist: jinja2>=3.0.0
+Requires-Dist: PyYAML>=5.1
+Requires-Dist: cryptography
+Requires-Dist: packaging
+Requires-Dist: resolvelib<0.9.0,>=0.5.3
 
 |PyPI version| |Docs badge| |Chat badge| |Build Status| |Code Of Conduct| |Mailing Lists| |License| |CII Best Practices|
 

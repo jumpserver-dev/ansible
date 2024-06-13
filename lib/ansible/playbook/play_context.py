@@ -353,13 +353,3 @@ class PlayContext(Base):
             except AttributeError:
                 continue
 
-        sensitive_vars = [
-            'ansible_ssh_pass', 'ansible_password', 'ansible_become_pass',
-            'ansible_ssh_private_key_file', 'ansible_ssh_common_args',
-        ]
-        vars = variables.get('vars', {})
-        hidden_char = '********'
-
-        for key in sensitive_vars:
-            vars[key] = hidden_char
-            variables[key] = hidden_char
