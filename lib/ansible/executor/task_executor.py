@@ -403,21 +403,23 @@ class TaskExecutor:
     def clean_sensitive_vars(self, variables):
         if os.environ.get('ANSIBLE_SUPER_MODE', ''):
             return variables
-        variables_copy = {}
-        sensitive_vars = []
 
-        for k, v in variables.items():
-            if isinstance(v, str) and (
-                    k in sensitive_vars or
-                    k.startswith('ansible') or
-                    k.startswith('js_') or
-                    'password' in v
-            ):
-                v = '********'
-            if isinstance(v, dict) or isinstance(v, Mapping):
-                v = self.clean_sensitive_vars(v)
-            variables_copy[k] = v
-        return variables_copy
+        shadow = '********'
+        sensitive_vars = ['password', 'secret', 'token', 'key', 'passphrase', 'become_pass', 'private']
+
+        def is_sensitive(key):
+            yes = key.startswith('js_') or any(var in key.lower() for var in sensitive_vars)
+            return yes
+
+        def clean_val(key, val):
+            if isinstance(key, str) and is_sensitive(key):
+                return shadow
+            elif isinstance(val, Mapping):
+                return {k: clean_val(k, v) for k, v in val.items()}
+            else:
+                return val
+
+        return {k: clean_val(k, v) for k, v in variables.items()}
 
     def _execute(self, variables=None):
         '''
