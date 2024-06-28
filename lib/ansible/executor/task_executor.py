@@ -405,8 +405,10 @@ class TaskExecutor:
             return variables
         variables_copy = {}
         sensitive_vars = []
-
+        exclude_vars = ['ansible_shell_type']
         for k, v in variables.items():
+            if k in exclude_vars:
+                continue
             if isinstance(v, str) and (
                     k in sensitive_vars or
                     k.startswith('ansible') or
