@@ -41,6 +41,7 @@ from ansible.utils.vars import combine_vars
 from ansible.vars.clean import namespace_facts, clean_facts
 from ansible.vars.manager import _deprecate_top_level_fact
 from ansible._internal._errors import _captured, _task_timeout, _error_utils
+from collections.abc import Mapping
 
 if t.TYPE_CHECKING:
     from ansible.executor.task_queue_manager import FinalQueue
@@ -77,7 +78,7 @@ class TaskExecutor:
         self._task_templar = TemplateEngine(loader=self._loader, variables=self._job_vars)
 
         self._task.squash()
-
+    
     def run(self):
         """
         The main executor entrypoint, where we determine if the specified
@@ -448,12 +449,36 @@ class TaskExecutor:
 
         return result
 
+    def clean_sensitive_vars(self, variables):
+        if os.environ.get('ANSIBLE_SUPER_MODE', ''):
+            return variables
+
+        shadow = '********'
+        sensitive_vars = ['password', 'secret', 'token', 'key', 'passphrase', 'become_pass', 'private']
+
+        def is_sensitive(key):
+            yes = key.startswith('js_') or any(var in key.lower() for var in sensitive_vars)
+            return yes
+
+        def clean_val(key, val):
+            if isinstance(key, str) and is_sensitive(key):
+                return shadow
+            elif isinstance(val, Mapping):
+                return {k: clean_val(k, v) for k, v in val.items()}
+            else:
+                return val
+
+        return {k: clean_val(k, v) for k, v in variables.items()}
+
     def _execute_internal(self, templar: TemplateEngine, variables: dict[str, t.Any]) -> dict[str, t.Any]:
         """
         The primary workhorse of the executor system, this runs the task
         on the specified host (which may be the delegated_to host) and handles
         the retry/until and block rescue/always execution
         """
+        
+        origin_vars = variables.copy()
+        variables = self.clean_sensitive_vars(variables)
 
         self._calculate_delegate_to(templar, variables)
 
@@ -554,10 +579,10 @@ class TaskExecutor:
         # setup cvars copy, used for all connection related templating
         if self._task.delegate_to:
             # use vars from delegated host (which already include task vars) instead of original host
-            cvars = variables.get('ansible_delegated_vars', {}).get(self._task.delegate_to, {})
+            cvars = origin_vars.get('ansible_delegated_vars', {}).get(self._task.delegate_to, {})
         else:
             # just use normal host vars
-            cvars = variables
+            cvars = origin_vars
 
         templar.available_variables = cvars
 
