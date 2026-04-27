@@ -10,7 +10,7 @@ import re
 from string import ascii_letters, digits
 
 from ansible.config.manager import ConfigManager
-from ansible.module_utils._text import to_text
+from ansible.module_utils.common.text.converters import to_text
 from ansible.module_utils.common.collections import Sequence
 from ansible.module_utils.parsing.convert_bool import BOOLEANS_TRUE
 from ansible.release import __version__
@@ -64,7 +64,6 @@ _ACTION_DEBUG = add_internal_fqcns(('debug', ))
 _ACTION_IMPORT_PLAYBOOK = add_internal_fqcns(('import_playbook', ))
 _ACTION_IMPORT_ROLE = add_internal_fqcns(('import_role', ))
 _ACTION_IMPORT_TASKS = add_internal_fqcns(('import_tasks', ))
-_ACTION_INCLUDE = add_internal_fqcns(('include', ))
 _ACTION_INCLUDE_ROLE = add_internal_fqcns(('include_role', ))
 _ACTION_INCLUDE_TASKS = add_internal_fqcns(('include_tasks', ))
 _ACTION_INCLUDE_VARS = add_internal_fqcns(('include_vars', ))
@@ -74,12 +73,11 @@ _ACTION_SET_FACT = add_internal_fqcns(('set_fact', ))
 _ACTION_SETUP = add_internal_fqcns(('setup', ))
 _ACTION_HAS_CMD = add_internal_fqcns(('command', 'shell', 'script'))
 _ACTION_ALLOWS_RAW_ARGS = _ACTION_HAS_CMD + add_internal_fqcns(('raw', ))
-_ACTION_ALL_INCLUDES = _ACTION_INCLUDE + _ACTION_INCLUDE_TASKS + _ACTION_INCLUDE_ROLE
-_ACTION_ALL_INCLUDE_IMPORT_TASKS = _ACTION_INCLUDE + _ACTION_INCLUDE_TASKS + _ACTION_IMPORT_TASKS
+_ACTION_ALL_INCLUDES = _ACTION_INCLUDE_TASKS + _ACTION_INCLUDE_ROLE
+_ACTION_ALL_INCLUDE_IMPORT_TASKS = _ACTION_INCLUDE_TASKS + _ACTION_IMPORT_TASKS
 _ACTION_ALL_PROPER_INCLUDE_IMPORT_ROLES = _ACTION_INCLUDE_ROLE + _ACTION_IMPORT_ROLE
 _ACTION_ALL_PROPER_INCLUDE_IMPORT_TASKS = _ACTION_INCLUDE_TASKS + _ACTION_IMPORT_TASKS
 _ACTION_ALL_INCLUDE_ROLE_TASKS = _ACTION_INCLUDE_ROLE + _ACTION_INCLUDE_TASKS
-_ACTION_ALL_INCLUDE_TASKS = _ACTION_INCLUDE + _ACTION_INCLUDE_TASKS
 _ACTION_FACT_GATHERING = _ACTION_SETUP + add_internal_fqcns(('gather_facts', ))
 _ACTION_WITH_CLEAN_FACTS = _ACTION_SET_FACT + _ACTION_INCLUDE_VARS
 
@@ -114,6 +112,46 @@ CONFIGURABLE_PLUGINS = ('become', 'cache', 'callback', 'cliconf', 'connection', 
 DOCUMENTABLE_PLUGINS = CONFIGURABLE_PLUGINS + ('module', 'strategy', 'test', 'filter')
 IGNORE_FILES = ("COPYING", "CONTRIBUTING", "LICENSE", "README", "VERSION", "GUIDELINES", "MANIFEST", "Makefile")  # ignore during module search
 INTERNAL_RESULT_KEYS = ('add_host', 'add_group')
+INTERNAL_STATIC_VARS = frozenset(
+    [
+        "ansible_async_path",
+        "ansible_collection_name",
+        "ansible_config_file",
+        "ansible_dependent_role_names",
+        "ansible_diff_mode",
+        "ansible_config_file",
+        "ansible_facts",
+        "ansible_forks",
+        "ansible_inventory_sources",
+        "ansible_limit",
+        "ansible_play_batch",
+        "ansible_play_hosts",
+        "ansible_play_hosts_all",
+        "ansible_play_role_names",
+        "ansible_playbook_python",
+        "ansible_role_name",
+        "ansible_role_names",
+        "ansible_run_tags",
+        "ansible_skip_tags",
+        "ansible_verbosity",
+        "ansible_version",
+        "inventory_dir",
+        "inventory_file",
+        "inventory_hostname",
+        "inventory_hostname_short",
+        "groups",
+        "group_names",
+        "omit",
+        "hostvars",
+        "playbook_dir",
+        "play_hosts",
+        "role_name",
+        "role_names",
+        "role_path",
+        "role_uuid",
+        "role_names",
+    ]
+)
 LOCALHOST = ('127.0.0.1', 'localhost', '::1')
 MODULE_REQUIRE_ARGS = tuple(add_internal_fqcns(('command', 'win_command', 'ansible.windows.win_command', 'shell', 'win_shell',
                                                 'ansible.windows.win_shell', 'raw', 'script')))

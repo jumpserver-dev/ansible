@@ -21,29 +21,32 @@ __metaclass__ = type
 
 from ansible import constants as C
 from ansible.errors import AnsibleError, AnsibleParserError, AnsibleUndefinedVariable, AnsibleAssertionError
-from ansible.module_utils._text import to_native
+from ansible.module_utils.common.text.converters import to_native
 from ansible.module_utils.six import string_types
 from ansible.parsing.mod_args import ModuleArgsParser
 from ansible.parsing.yaml.objects import AnsibleBaseYAMLObject, AnsibleMapping
 from ansible.plugins.loader import lookup_loader
-from ansible.playbook.attribute import FieldAttribute, NonInheritableFieldAttribute
+from ansible.playbook.attribute import NonInheritableFieldAttribute
 from ansible.playbook.base import Base
 from ansible.playbook.block import Block
 from ansible.playbook.collectionsearch import CollectionSearch
 from ansible.playbook.conditional import Conditional
+from ansible.playbook.delegatable import Delegatable
 from ansible.playbook.loop_control import LoopControl
+from ansible.playbook.notifiable import Notifiable
 from ansible.playbook.role import Role
 from ansible.playbook.taggable import Taggable
 from ansible.utils.collection_loader import AnsibleCollectionConfig
 from ansible.utils.display import Display
 from ansible.utils.sentinel import Sentinel
+from ansible.utils.vars import isidentifier
 
 __all__ = ['Task']
 
 display = Display()
 
 
-class Task(Base, Conditional, Taggable, CollectionSearch):
+class Task(Base, Conditional, Taggable, CollectionSearch, Notifiable, Delegatable):
 
     """
     A task is a language feature that represents a call to a module, with given arguments and other parameters.
@@ -66,22 +69,19 @@ class Task(Base, Conditional, Taggable, CollectionSearch):
     # inheritance is only triggered if the 'current value' is Sentinel,
     # default can be set at play/top level object and inheritance will take it's course.
 
-    args = FieldAttribute(isa='dict', default=dict)
-    action = FieldAttribute(isa='string')
+    args = NonInheritableFieldAttribute(isa='dict', default=dict)
+    action = NonInheritableFieldAttribute(isa='string')
 
-    async_val = FieldAttribute(isa='int', default=0, alias='async')
-    changed_when = FieldAttribute(isa='list', default=list)
-    delay = FieldAttribute(isa='int', default=5)
-    delegate_to = FieldAttribute(isa='string')
-    delegate_facts = FieldAttribute(isa='bool')
-    failed_when = FieldAttribute(isa='list', default=list)
-    loop = FieldAttribute()
+    async_val = NonInheritableFieldAttribute(isa='int', default=0, alias='async')
+    changed_when = NonInheritableFieldAttribute(isa='list', default=list)
+    delay = NonInheritableFieldAttribute(isa='int', default=5)
+    failed_when = NonInheritableFieldAttribute(isa='list', default=list)
+    loop = NonInheritableFieldAttribute(isa='list')
     loop_control = NonInheritableFieldAttribute(isa='class', class_type=LoopControl, default=LoopControl)
-    notify = FieldAttribute(isa='list')
-    poll = FieldAttribute(isa='int', default=C.DEFAULT_POLL_INTERVAL)
-    register = FieldAttribute(isa='string', static=True)
-    retries = FieldAttribute(isa='int', default=3)
-    until = FieldAttribute(isa='list', default=list)
+    poll = NonInheritableFieldAttribute(isa='int', default=C.DEFAULT_POLL_INTERVAL)
+    register = NonInheritableFieldAttribute(isa='string', static=True)
+    retries = NonInheritableFieldAttribute(isa='int')  # default is set in TaskExecutor
+    until = NonInheritableFieldAttribute(isa='list', default=list)
 
     # deprecated, used to be loop and loop_args but loop has been repurposed
     loop_with = NonInheritableFieldAttribute(isa='string', private=True)
@@ -138,7 +138,7 @@ class Task(Base, Conditional, Taggable, CollectionSearch):
 
     def __repr__(self):
         ''' returns a human readable representation of the task '''
-        if self.get_name() in C._ACTION_META:
+        if self.action in C._ACTION_META:
             return "TASK: meta (%s)" % self.args['_raw_params']
         else:
             return "TASK: %s" % self.get_name()
@@ -211,6 +211,7 @@ class Task(Base, Conditional, Taggable, CollectionSearch):
             # But if it wasn't, we can add the yaml object now to get more detail
             raise AnsibleParserError(to_native(e), obj=ds, orig_exc=e)
         else:
+            # Set the resolved action plugin (or if it does not exist, module) for callbacks.
             self.resolved_action = args_parser.resolved_action
 
         # the command/shell/script modules used to support the `cmd` arg,
@@ -276,6 +277,10 @@ class Task(Base, Conditional, Taggable, CollectionSearch):
         if not isinstance(value, list):
             setattr(self, name, [value])
 
+    def _validate_register(self, attr, name, value):
+        if value is not None and not isidentifier(value):
+            raise AnsibleParserError(f"Invalid variable name in 'register' specified: '{value}'")
+
     def post_validate(self, templar):
         '''
         Override of base class post_validate, to also do final validation on
@@ -289,6 +294,30 @@ class Task(Base, Conditional, Taggable, CollectionSearch):
             pass
 
         super(Task, self).post_validate(templar)
+
+    def _post_validate_args(self, attr, value, templar):
+        # smuggle an untemplated copy of the task args for actions that need more control over the templating of their
+        # input (eg, debug's var/msg, assert's "that" conditional expressions)
+        self.untemplated_args = value
+
+        # now recursively template the args dict
+        args = templar.template(value)
+
+        # FIXME: could we just nuke this entirely and/or wrap it up in ModuleArgsParser or something?
+        if '_variable_params' in args:
+            variable_params = args.pop('_variable_params')
+            if isinstance(variable_params, dict):
+                if C.INJECT_FACTS_AS_VARS:
+                    display.warning("Using a variable for a task's 'args' is unsafe in some situations "
+                                    "(see https://docs.ansible.com/ansible/devel/reference_appendices/faq.html#argsplat-unsafe)")
+                variable_params.update(args)
+                args = variable_params
+            else:
+                # if we didn't get a dict, it means there's garbage remaining after k=v parsing, just give up
+                # see https://github.com/ansible/ansible/issues/79862
+                raise AnsibleError(f"invalid or malformed argument: '{variable_params}'")
+
+        return args
 
     def _post_validate_loop(self, attr, value, templar):
         '''
@@ -509,3 +538,9 @@ class Task(Base, Conditional, Taggable, CollectionSearch):
                 return self._parent
             return self._parent.get_first_parent_include()
         return None
+
+    def get_play(self):
+        parent = self._parent
+        while not isinstance(parent, Block):
+            parent = parent._parent
+        return parent._play

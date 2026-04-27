@@ -23,11 +23,9 @@ __metaclass__ = type
 
 from ansible import constants as C
 from ansible import context
-from ansible.module_utils.compat.paramiko import paramiko
 from ansible.playbook.attribute import FieldAttribute
 from ansible.playbook.base import Base
 from ansible.utils.display import Display
-from ansible.utils.ssh_functions import check_for_controlpersist
 
 
 display = Display()
@@ -121,7 +119,7 @@ class PlayContext(Base):
     def verbosity(self):
         display.deprecated(
             "PlayContext.verbosity is deprecated, use ansible.utils.display.Display.verbosity instead.",
-            version=2.18
+            version="2.18"
         )
         return self._internal_verbosity
 
@@ -129,7 +127,7 @@ class PlayContext(Base):
     def verbosity(self, value):
         display.deprecated(
             "PlayContext.verbosity is deprecated, use ansible.utils.display.Display.verbosity instead.",
-            version=2.18
+            version="2.18"
         )
         self._internal_verbosity = value
 
@@ -320,10 +318,6 @@ class PlayContext(Base):
             display.warning('The "%s" connection plugin has an improperly configured remote target value, '
                             'forcing "inventory_hostname" templated value instead of the string' % new_info.connection)
 
-        # set no_log to default if it was not previously set
-        if new_info.no_log is None:
-            new_info.no_log = C.DEFAULT_NO_LOG
-
         if task.check_mode is not None:
             new_info.check_mode = task.check_mode
 
@@ -352,4 +346,3 @@ class PlayContext(Base):
                         variables[var_opt] = var_val
             except AttributeError:
                 continue
-

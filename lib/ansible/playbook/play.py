@@ -22,15 +22,15 @@ __metaclass__ = type
 from ansible import constants as C
 from ansible import context
 from ansible.errors import AnsibleParserError, AnsibleAssertionError
-from ansible.module_utils._text import to_native
+from ansible.module_utils.common.text.converters import to_native
 from ansible.module_utils.common.collections import is_sequence
 from ansible.module_utils.six import binary_type, string_types, text_type
-from ansible.playbook.attribute import FieldAttribute
+from ansible.playbook.attribute import NonInheritableFieldAttribute
 from ansible.playbook.base import Base
 from ansible.playbook.block import Block
 from ansible.playbook.collectionsearch import CollectionSearch
 from ansible.playbook.helpers import load_list_of_blocks, load_list_of_roles
-from ansible.playbook.role import Role
+from ansible.playbook.role import Role, hash_params
 from ansible.playbook.task import Task
 from ansible.playbook.taggable import Taggable
 from ansible.vars.manager import preprocess_vars
@@ -55,35 +55,35 @@ class Play(Base, Taggable, CollectionSearch):
     """
 
     # =================================================================================
-    hosts = FieldAttribute(isa='list', required=True, listof=string_types, always_post_validate=True, priority=-2)
+    hosts = NonInheritableFieldAttribute(isa='list', required=True, listof=string_types, always_post_validate=True, priority=-2)
 
     # Facts
-    gather_facts = FieldAttribute(isa='bool', default=None, always_post_validate=True)
+    gather_facts = NonInheritableFieldAttribute(isa='bool', default=None, always_post_validate=True)
 
     # defaults to be deprecated, should be 'None' in future
-    gather_subset = FieldAttribute(isa='list', default=(lambda: C.DEFAULT_GATHER_SUBSET), listof=string_types, always_post_validate=True)
-    gather_timeout = FieldAttribute(isa='int', default=C.DEFAULT_GATHER_TIMEOUT, always_post_validate=True)
-    fact_path = FieldAttribute(isa='string', default=C.DEFAULT_FACT_PATH)
+    gather_subset = NonInheritableFieldAttribute(isa='list', default=(lambda: C.DEFAULT_GATHER_SUBSET), listof=string_types, always_post_validate=True)
+    gather_timeout = NonInheritableFieldAttribute(isa='int', default=C.DEFAULT_GATHER_TIMEOUT, always_post_validate=True)
+    fact_path = NonInheritableFieldAttribute(isa='string', default=C.DEFAULT_FACT_PATH)
 
     # Variable Attributes
-    vars_files = FieldAttribute(isa='list', default=list, priority=99)
-    vars_prompt = FieldAttribute(isa='list', default=list, always_post_validate=False)
+    vars_files = NonInheritableFieldAttribute(isa='list', default=list, priority=99)
+    vars_prompt = NonInheritableFieldAttribute(isa='list', default=list, always_post_validate=False)
 
     # Role Attributes
-    roles = FieldAttribute(isa='list', default=list, priority=90)
+    roles = NonInheritableFieldAttribute(isa='list', default=list, priority=90)
 
     # Block (Task) Lists Attributes
-    handlers = FieldAttribute(isa='list', default=list, priority=-1)
-    pre_tasks = FieldAttribute(isa='list', default=list, priority=-1)
-    post_tasks = FieldAttribute(isa='list', default=list, priority=-1)
-    tasks = FieldAttribute(isa='list', default=list, priority=-1)
+    handlers = NonInheritableFieldAttribute(isa='list', default=list, priority=-1)
+    pre_tasks = NonInheritableFieldAttribute(isa='list', default=list, priority=-1)
+    post_tasks = NonInheritableFieldAttribute(isa='list', default=list, priority=-1)
+    tasks = NonInheritableFieldAttribute(isa='list', default=list, priority=-1)
 
     # Flag/Setting Attributes
-    force_handlers = FieldAttribute(isa='bool', default=context.cliargs_deferred_get('force_handlers'), always_post_validate=True)
-    max_fail_percentage = FieldAttribute(isa='percent', always_post_validate=True)
-    serial = FieldAttribute(isa='list', default=list, always_post_validate=True)
-    strategy = FieldAttribute(isa='string', default=C.DEFAULT_STRATEGY, always_post_validate=True)
-    order = FieldAttribute(isa='string', always_post_validate=True)
+    force_handlers = NonInheritableFieldAttribute(isa='bool', default=context.cliargs_deferred_get('force_handlers'), always_post_validate=True)
+    max_fail_percentage = NonInheritableFieldAttribute(isa='percent', always_post_validate=True)
+    serial = NonInheritableFieldAttribute(isa='list', default=list, always_post_validate=True)
+    strategy = NonInheritableFieldAttribute(isa='string', default=C.DEFAULT_STRATEGY, always_post_validate=True)
+    order = NonInheritableFieldAttribute(isa='string', always_post_validate=True)
 
     # =================================================================================
 
@@ -93,7 +93,7 @@ class Play(Base, Taggable, CollectionSearch):
         self._included_conditional = None
         self._included_path = None
         self._removed_hosts = []
-        self.ROLE_CACHE = {}
+        self.role_cache = {}
 
         self.only_tags = set(context.CLIARGS.get('tags', [])) or frozenset(('all',))
         self.skip_tags = set(context.CLIARGS.get('skip_tags', []))
@@ -103,6 +103,22 @@ class Play(Base, Taggable, CollectionSearch):
 
     def __repr__(self):
         return self.get_name()
+
+    @property
+    def ROLE_CACHE(self):
+        """Backwards compat for custom strategies using ``play.ROLE_CACHE``
+        """
+        display.deprecated(
+            'Play.ROLE_CACHE is deprecated in favor of Play.role_cache, or StrategyBase._get_cached_role',
+            version='2.18',
+        )
+        cache = {}
+        for path, roles in self.role_cache.items():
+            for role in roles:
+                name = role.get_name()
+                hashed_params = hash_params(role._get_hash_dict())
+                cache.setdefault(name, {})[hashed_params] = role
+        return cache
 
     def _validate_hosts(self, attribute, name, value):
         # Only validate 'hosts' if a value was passed in to original data set.
@@ -393,7 +409,7 @@ class Play(Base, Taggable, CollectionSearch):
 
     def copy(self):
         new_me = super(Play, self).copy()
-        new_me.ROLE_CACHE = self.ROLE_CACHE.copy()
+        new_me.role_cache = self.role_cache.copy()
         new_me._included_conditional = self._included_conditional
         new_me._included_path = self._included_path
         new_me._action_groups = self._action_groups

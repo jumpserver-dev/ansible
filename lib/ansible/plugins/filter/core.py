@@ -27,16 +27,17 @@ from jinja2.filters import pass_environment
 
 from ansible.errors import AnsibleError, AnsibleFilterError, AnsibleFilterTypeError
 from ansible.module_utils.six import string_types, integer_types, reraise, text_type
-from ansible.module_utils._text import to_bytes, to_native, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_native, to_text
 from ansible.module_utils.common.collections import is_sequence
 from ansible.module_utils.common.yaml import yaml_load, yaml_load_all
 from ansible.parsing.ajson import AnsibleJSONEncoder
 from ansible.parsing.yaml.dumper import AnsibleDumper
 from ansible.template import recursive_check_defined
 from ansible.utils.display import Display
-from ansible.utils.encrypt import passlib_or_crypt
+from ansible.utils.encrypt import do_encrypt, PASSLIB_AVAILABLE
 from ansible.utils.hashing import md5s, checksum_s
 from ansible.utils.unicode import unicode_wrap
+from ansible.utils.unsafe_proxy import _is_unsafe
 from ansible.utils.vars import merge_hash
 
 display = Display()
@@ -192,8 +193,8 @@ def ternary(value, true_val, false_val, none_val=None):
 
 
 def regex_escape(string, re_type='python'):
+    """Escape all regular expressions special characters from STRING."""
     string = to_text(string, errors='surrogate_or_strict', nonstring='simplerepr')
-    '''Escape all regular expressions special characters from STRING.'''
     if re_type == 'python':
         return re.escape(string)
     elif re_type == 'posix_basic':
@@ -215,6 +216,8 @@ def from_yaml(data):
         # The ``text_type`` call here strips any custom
         # string wrapper class, so that CSafeLoader can
         # read the data
+        if _is_unsafe(data):
+            data = data._strip_unsafe()
         return yaml_load(text_type(to_text(data, errors='surrogate_or_strict')))
     return data
 
@@ -224,6 +227,8 @@ def from_yaml_all(data):
         # The ``text_type`` call here strips any custom
         # string wrapper class, so that CSafeLoader can
         # read the data
+        if _is_unsafe(data):
+            data = data._strip_unsafe()
         return yaml_load_all(text_type(to_text(data, errors='surrogate_or_strict')))
     return data
 
@@ -281,10 +286,27 @@ def get_encrypted_password(password, hashtype='sha512', salt=None, salt_size=Non
     }
 
     hashtype = passlib_mapping.get(hashtype, hashtype)
+
+    unknown_passlib_hashtype = False
+    if PASSLIB_AVAILABLE and hashtype not in passlib_mapping and hashtype not in passlib_mapping.values():
+        unknown_passlib_hashtype = True
+        display.deprecated(
+            f"Checking for unsupported password_hash passlib hashtype '{hashtype}'. "
+            "This will be an error in the future as all supported hashtypes must be documented.",
+            version='2.19'
+        )
+
     try:
-        return passlib_or_crypt(password, hashtype, salt=salt, salt_size=salt_size, rounds=rounds, ident=ident)
+        return do_encrypt(password, hashtype, salt=salt, salt_size=salt_size, rounds=rounds, ident=ident)
     except AnsibleError as e:
         reraise(AnsibleFilterError, AnsibleFilterError(to_native(e), orig_exc=e), sys.exc_info()[2])
+    except Exception as e:
+        if unknown_passlib_hashtype:
+            # This can occur if passlib.hash has the hashtype attribute, but it has a different signature than the valid choices.
+            # In 2.19 this will replace the deprecation warning above and the extra exception handling can be deleted.
+            choices = ', '.join(passlib_mapping)
+            raise AnsibleFilterError(f"{hashtype} is not in the list of supported passlib algorithms: {choices}") from e
+        raise
 
 
 def to_uuid(string, namespace=UUID_NAMESPACE_ANSIBLE):
@@ -299,9 +321,9 @@ def to_uuid(string, namespace=UUID_NAMESPACE_ANSIBLE):
 
 
 def mandatory(a, msg=None):
+    """Make a variable mandatory."""
     from jinja2.runtime import Undefined
 
-    ''' Make a variable mandatory '''
     if isinstance(a, Undefined):
         if a._undefined_name is not None:
             name = "'%s' " % to_text(a._undefined_name)
@@ -310,8 +332,7 @@ def mandatory(a, msg=None):
 
         if msg is not None:
             raise AnsibleFilterError(to_native(msg))
-        else:
-            raise AnsibleFilterError("Mandatory variable %s not defined." % name)
+        raise AnsibleFilterError("Mandatory variable %s not defined." % name)
 
     return a
 
@@ -559,10 +580,24 @@ def path_join(paths):
         of the different members '''
     if isinstance(paths, string_types):
         return os.path.join(paths)
-    elif is_sequence(paths):
+    if is_sequence(paths):
         return os.path.join(*paths)
-    else:
-        raise AnsibleFilterTypeError("|path_join expects string or sequence, got %s instead." % type(paths))
+    raise AnsibleFilterTypeError("|path_join expects string or sequence, got %s instead." % type(paths))
+
+
+def commonpath(paths):
+    """
+    Retrieve the longest common path from the given list.
+
+    :param paths: A list of file system paths.
+    :type paths: List[str]
+    :returns: The longest common path.
+    :rtype: str
+    """
+    if not is_sequence(paths):
+        raise AnsibleFilterTypeError("|path_join expects sequence, got %s instead." % type(paths))
+
+    return os.path.commonpath(paths)
 
 
 class FilterModule(object):
@@ -600,6 +635,8 @@ class FilterModule(object):
             'win_basename': partial(unicode_wrap, ntpath.basename),
             'win_dirname': partial(unicode_wrap, ntpath.dirname),
             'win_splitdrive': partial(unicode_wrap, ntpath.splitdrive),
+            'commonpath': commonpath,
+            'normpath': partial(unicode_wrap, os.path.normpath),
 
             # file glob
             'fileglob': fileglob,

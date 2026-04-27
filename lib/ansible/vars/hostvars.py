@@ -20,27 +20,11 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 from collections.abc import Mapping
+from functools import cached_property
 
+from ansible import constants as C
 from ansible.template import Templar, AnsibleUndefined
 
-STATIC_VARS = [
-    'ansible_version',
-    'ansible_play_hosts',
-    'ansible_dependent_role_names',
-    'ansible_play_role_names',
-    'ansible_role_names',
-    'inventory_hostname',
-    'inventory_hostname_short',
-    'inventory_file',
-    'inventory_dir',
-    'groups',
-    'group_names',
-    'omit',
-    'playbook_dir',
-    'play_hosts',
-    'role_names',
-    'ungrouped',
-]
 
 __all__ = ['HostVars', 'HostVarsVars']
 
@@ -110,11 +94,12 @@ class HostVars(Mapping):
         return self._find_host(host_name) is not None
 
     def __iter__(self):
-        for host in self._inventory.hosts:
-            yield host
+        # include implicit localhost only if it has variables set
+        yield from self._inventory.hosts | {'localhost': self._inventory.localhost} if self._inventory.localhost else {}
 
     def __len__(self):
-        return len(self._inventory.hosts)
+        # include implicit localhost only if it has variables set
+        return len(self._inventory.hosts) + (1 if self._inventory.localhost else 0)
 
     def __repr__(self):
         out = {}
@@ -135,10 +120,14 @@ class HostVarsVars(Mapping):
         self._vars = variables
         self._loader = loader
 
+    @cached_property
+    def _templar(self):
+        # NOTE: this only has access to the host's own vars,
+        # so templates that depend on vars in other scopes will not work.
+        return Templar(variables=self._vars, loader=self._loader)
+
     def __getitem__(self, var):
-        templar = Templar(variables=self._vars, loader=self._loader)
-        foo = templar.template(self._vars[var], fail_on_undefined=False, static_vars=STATIC_VARS)
-        return foo
+        return self._templar.template(self._vars[var], fail_on_undefined=False, static_vars=C.INTERNAL_STATIC_VARS)
 
     def __contains__(self, var):
         return (var in self._vars)
@@ -151,5 +140,11 @@ class HostVarsVars(Mapping):
         return len(self._vars.keys())
 
     def __repr__(self):
-        templar = Templar(variables=self._vars, loader=self._loader)
-        return repr(templar.template(self._vars, fail_on_undefined=False, static_vars=STATIC_VARS))
+        return repr(self._templar.template(self._vars, fail_on_undefined=False, static_vars=C.INTERNAL_STATIC_VARS))
+
+    def __getstate__(self):
+        ''' override serialization here to avoid
+            pickle issues with templar and Jinja native'''
+        state = self.__dict__.copy()
+        state.pop('_templar', None)
+        return state

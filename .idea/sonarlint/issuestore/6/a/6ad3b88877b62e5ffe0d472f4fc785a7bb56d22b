@@ -1,0 +1,34 @@
+
+˜python:S1192Ü"Define a constant instead of duplicating this literal "No package matching '%s' found available, installed or updated" 4 times.(ðñöÒ
+Žpython:S1192å"uDefine a constant instead of duplicating this literal "The following packages have pending transactions: %s" 3 times.(îÍ¢²
+tpython:S1192¿"[Define a constant instead of duplicating this literal "Failure talking to yum: %s" 5 times.(Á¦ŽÒ
+Žpython:S1192Ÿ"uDefine a constant instead of duplicating this literal "Failed to get envra information from RPM package: %s" 3 times.(­î¢
+ˆpython:S1192‹"jDefine a constant instead of duplicating this literal "No RPM file matching '%s' found on system" 4 times.(˜ß’óúÿÿÿÿ
+ƒpython:S1192¢"eDefine a constant instead of duplicating this literal '%s providing %s is already installed' 3 times.(„‰úÄüÿÿÿÿ
+ipython:S1192®"PDefine a constant instead of duplicating this literal '--releasever=%s' 9 times.(¬ÇÕµ
+vpython:S1192µ"]Define a constant instead of duplicating this literal 'Error from repoquery: %s: %s' 3 times.(ÿ»¨Ä
+Hpython:S1066ù"/Merge this if statement with the enclosing one.(ˆÃÊÍ
+Mpython:S1066ã"/Merge this if statement with the enclosing one.(Ù‘Ûþÿÿÿÿ
+mpython:S3776Ñ"TRefactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.(ÐÀæ‹
+rpython:S3776"TRefactor this function to reduce its Cognitive Complexity from 21 to the 15 allowed.(×Æ³Ðúÿÿÿÿ
+epython:S1763”"GDelete this unreachable code or refactor the code to make it reachable.(¡’Ìïþÿÿÿÿ
+rpython:S3776à"TRefactor this function to reduce its Cognitive Complexity from 31 to the 15 allowed.(ñÐðÿÿÿÿÿ
+mpython:S3776â"TRefactor this function to reduce its Cognitive Complexity from 26 to the 15 allowed.(—þãÅ
+mpython:S3776Ÿ"TRefactor this function to reduce its Cognitive Complexity from 17 to the 15 allowed.(úšùÕ
+Cpython:S1481Ì"%Remove the unused local variable "e".(Ä«òùÿÿÿÿ
+rpython:S3776Ú"TRefactor this function to reduce its Cognitive Complexity from 23 to the 15 allowed.(˜æ÷Âûÿÿÿÿ
+qpython:S2737÷"XAdd logic to this except clause or eliminate it and rethrow the exception automatically.(€³¢»
+rpython:S3776Ä"TRefactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.(¶áîùÿÿÿÿ
+jpython:S1134ô"LTake the required action to fix the issue indicated by this "FIXME" comment.(Üöµëûÿÿÿÿ
+gpython:S1854ˆ	"IRemove this assignment to local variable 'arch'; the value is never used.(˜ê¶¸þÿÿÿÿ
+npython:S3776ú"URefactor this function to reduce its Cognitive Complexity from 113 to the 15 allowed.(—»àè
+mpython:S3776§	"TRefactor this function to reduce its Cognitive Complexity from 30 to the 15 allowed.(Úô–Í
+spython:S3776 
+"URefactor this function to reduce its Cognitive Complexity from 109 to the 15 allowed.(«Ù±Áùÿÿÿÿ
+epython:S1134ú
+"LTake the required action to fix the issue indicated by this "FIXME" comment.(ìˆ«Ø
+Rpython:S1135Á"4Complete the task associated to this "TODO" comment.(¦×Ÿàúÿÿÿÿ
+>python:S1481ö"%Remove the unused local variable "a".(¤ðÙž
+lpython:S3776š"TRefactor this function to reduce its Cognitive Complexity from 49 to the 15 allowed.(ßš«B
+Rpython:S1481¸"4Replace the unused local variable "stdout" with "_".(Ôÿ‹€ýÿÿÿÿ
+mpython:S3776˜"TRefactor this function to reduce its Cognitive Complexity from 53 to the 15 allowed.(¯Œåò

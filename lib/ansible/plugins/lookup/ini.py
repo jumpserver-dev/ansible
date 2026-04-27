@@ -39,7 +39,7 @@ DOCUMENTATION = """
         default: ''
       case_sensitive:
         description:
-          Whether key names read from C(file) should be case sensitive. This prevents
+          Whether key names read from O(file) should be case sensitive. This prevents
           duplicate key errors if keys only differ in case.
         default: False
         version_added: '2.12'
@@ -50,6 +50,9 @@ DOCUMENTATION = """
         default: False
         aliases: ['allow_none']
         version_added: '2.12'
+    seealso:
+      - ref: playbook_task_paths
+        description: Search paths used for relative files.
 """
 
 EXAMPLES = """
@@ -85,7 +88,7 @@ from collections import defaultdict
 from collections.abc import MutableSequence
 
 from ansible.errors import AnsibleLookupError, AnsibleOptionsError
-from ansible.module_utils._text import to_text, to_native
+from ansible.module_utils.common.text.converters import to_text, to_native
 from ansible.plugins.lookup import LookupBase
 
 
@@ -187,7 +190,7 @@ class LookupModule(LookupBase):
             config.seek(0, os.SEEK_SET)
 
             try:
-                self.cp.readfp(config)
+                self.cp.read_file(config)
             except configparser.DuplicateOptionError as doe:
                 raise AnsibleLookupError("Duplicate option in '{file}': {error}".format(file=paramvals['file'], error=to_native(doe)))
 

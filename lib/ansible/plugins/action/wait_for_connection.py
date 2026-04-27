@@ -20,9 +20,9 @@ from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
-from ansible.module_utils._text import to_text
+from ansible.module_utils.common.text.converters import to_text
 from ansible.plugins.action import ActionBase
 from ansible.utils.display import Display
 
@@ -43,10 +43,10 @@ class ActionModule(ActionBase):
     DEFAULT_TIMEOUT = 600
 
     def do_until_success_or_timeout(self, what, timeout, connect_timeout, what_desc, sleep=1):
-        max_end_time = datetime.utcnow() + timedelta(seconds=timeout)
+        max_end_time = datetime.now(timezone.utc) + timedelta(seconds=timeout)
 
         e = None
-        while datetime.utcnow() < max_end_time:
+        while datetime.now(timezone.utc) < max_end_time:
             try:
                 what(connect_timeout)
                 if what_desc:

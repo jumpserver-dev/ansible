@@ -1,0 +1,17 @@
+
+Špython:S1192ÿ	"qDefine a constant instead of duplicating this literal 'Failed to install some of the specified packages' 3 times.(·¦œ©
+jpython:S1134—"LTake the required action to fix the issue indicated by this "FIXME" comment.(–¡ßÙıÿÿÿÿ
+Upython:S1481á"7Replace the unused local variable "delimiter" with "_".(‚ ÏÖûÿÿÿÿ
+2python:S6659ì"Use `endswith` here.(­”÷¤úÿÿÿÿ
+rpython:S3776Õ"TRefactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.(Ñüé‡ÿÿÿÿÿ
+rpython:S3776Ã"TRefactor this function to reduce its Cognitive Complexity from 21 to the 15 allowed.(´ƒ—ïÿÿÿÿÿ
+mpython:S3776¾"TRefactor this function to reduce its Cognitive Complexity from 24 to the 15 allowed.(¹şÛ»
+Rpython:S1135Ë"4Complete the task associated to this "TODO" comment.(úñÛĞøÿÿÿÿ
+8python:S3626"Remove this redundant continue.(À–¬ˆ
+mpython:S3776"TRefactor this function to reduce its Cognitive Complexity from 23 to the 15 allowed.(©£
+rpython:S3776Æ"TRefactor this function to reduce its Cognitive Complexity from 24 to the 15 allowed.(é„Ñøÿÿÿÿ
+Qpython:S1481é"9Replace the unused local variable "module_list" with "_".(ô™
+Fpython:S1481Ø	"-Remove the unused local variable "installed".(¹ÊÜü
+npython:S3776÷"URefactor this function to reduce its Cognitive Complexity from 315 to the 15 allowed.(Ş“Ïç
+mpython:S3776Ô
+"TRefactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.(¯Œåò

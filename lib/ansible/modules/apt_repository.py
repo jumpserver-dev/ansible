@@ -26,6 +26,8 @@ attributes:
         platforms: debian
 notes:
     - This module supports Debian Squeeze (version 6) as well as its successors and derivatives.
+seealso:
+  - module: ansible.builtin.deb822_repository
 options:
     repo:
         description:
@@ -52,19 +54,19 @@ options:
         aliases: [ update-cache ]
     update_cache_retries:
         description:
-        - Amount of retries if the cache update fails. Also see I(update_cache_retry_max_delay).
+        - Amount of retries if the cache update fails. Also see O(update_cache_retry_max_delay).
         type: int
         default: 5
         version_added: '2.10'
     update_cache_retry_max_delay:
         description:
-        - Use an exponential backoff delay for each retry (see I(update_cache_retries)) up to this max delay in seconds.
+        - Use an exponential backoff delay for each retry (see O(update_cache_retries)) up to this max delay in seconds.
         type: int
         default: 12
         version_added: '2.10'
     validate_certs:
         description:
-            - If C(false), SSL certificates for the target repo will not be validated. This should only be used
+            - If V(false), SSL certificates for the target repo will not be validated. This should only be used
               on personally controlled sites using self-signed certificates.
         type: bool
         default: 'yes'
@@ -89,7 +91,7 @@ options:
               Without this library, the module does not work.
             - Runs C(apt-get install python-apt) for Python 2, and C(apt-get install python3-apt) for Python 3.
             - Only works with the system Python 2 or Python 3. If you are using a Python on the remote that is not
-               the system Python, set I(install_python_apt=false) and ensure that the Python apt library
+               the system Python, set O(install_python_apt=false) and ensure that the Python apt library
                for your Python version is installed some other way.
         type: bool
         default: true
@@ -138,15 +140,35 @@ EXAMPLES = '''
     - name: somerepo |no apt key
       ansible.builtin.get_url:
         url: https://download.example.com/linux/ubuntu/gpg
-        dest: /etc/apt/trusted.gpg.d/somerepo.asc
+        dest: /etc/apt/keyrings/somerepo.asc
 
     - name: somerepo | apt source
       ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/trusted.gpg.d/myrepo.asc] https://download.example.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/myrepo.asc] https://download.example.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
 '''
 
-RETURN = '''#'''
+RETURN = '''
+repo:
+  description: A source string for the repository
+  returned: always
+  type: str
+  sample: "deb https://artifacts.elastic.co/packages/6.x/apt stable main"
+
+sources_added:
+  description: List of sources added
+  returned: success, sources were added
+  type: list
+  sample: ["/etc/apt/sources.list.d/artifacts_elastic_co_packages_6_x_apt.list"]
+  version_added: "2.15"
+
+sources_removed:
+  description: List of sources removed
+  returned: success, sources were removed
+  type: list
+  sample: ["/etc/apt/sources.list.d/artifacts_elastic_co_packages_6_x_apt.list"]
+  version_added: "2.15"
+'''
 
 import copy
 import glob
@@ -160,9 +182,11 @@ import time
 
 from ansible.module_utils.basic import AnsibleModule
 from ansible.module_utils.common.respawn import has_respawned, probe_interpreters_for_module, respawn_module
-from ansible.module_utils._text import to_native
+from ansible.module_utils.common.text.converters import to_native
 from ansible.module_utils.six import PY3
 from ansible.module_utils.urls import fetch_url
+
+from ansible.module_utils.common.locale import get_best_parsable_locale
 
 try:
     import apt
@@ -471,8 +495,11 @@ class UbuntuSourcesList(SourcesList):
     def _key_already_exists(self, key_fingerprint):
 
         if self.apt_key_bin:
+            locale = get_best_parsable_locale(self.module)
+            APT_ENV = dict(LANG=locale, LC_ALL=locale, LC_MESSAGES=locale, LC_CTYPE=locale)
+            self.module.run_command_environ_update = APT_ENV
             rc, out, err = self.module.run_command([self.apt_key_bin, 'export', key_fingerprint], check_rc=True)
-            found = len(err) == 0
+            found = bool(not err or 'nothing exported' not in err)
         else:
             found = self._gpg_key_exists(key_fingerprint)
 
@@ -688,15 +715,18 @@ def main():
     sources_after = sourceslist.dump()
     changed = sources_before != sources_after
 
-    if changed and module._diff:
-        diff = []
-        for filename in set(sources_before.keys()).union(sources_after.keys()):
-            diff.append({'before': sources_before.get(filename, ''),
-                         'after': sources_after.get(filename, ''),
-                         'before_header': (filename, '/dev/null')[filename not in sources_before],
-                         'after_header': (filename, '/dev/null')[filename not in sources_after]})
-    else:
-        diff = {}
+    diff = []
+    sources_added = set()
+    sources_removed = set()
+    if changed:
+        sources_added = set(sources_after.keys()).difference(sources_before.keys())
+        sources_removed = set(sources_before.keys()).difference(sources_after.keys())
+        if module._diff:
+            for filename in set(sources_added.union(sources_removed)):
+                diff.append({'before': sources_before.get(filename, ''),
+                             'after': sources_after.get(filename, ''),
+                             'before_header': (filename, '/dev/null')[filename not in sources_before],
+                             'after_header': (filename, '/dev/null')[filename not in sources_after]})
 
     if changed and not module.check_mode:
         try:
@@ -728,7 +758,7 @@ def main():
             revert_sources_list(sources_before, sources_after, sourceslist_before)
             module.fail_json(msg=to_native(ex))
 
-    module.exit_json(changed=changed, repo=repo, state=state, diff=diff)
+    module.exit_json(changed=changed, repo=repo, sources_added=sources_added, sources_removed=sources_removed, state=state, diff=diff)
 
 
 if __name__ == '__main__':

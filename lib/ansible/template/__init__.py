@@ -31,9 +31,9 @@ from contextlib import contextmanager
 from numbers import Number
 from traceback import format_exc
 
-from jinja2.exceptions import TemplateSyntaxError, UndefinedError
+from jinja2.exceptions import TemplateSyntaxError, UndefinedError, SecurityError
 from jinja2.loaders import FileSystemLoader
-from jinja2.sandbox import SandboxedEnvironment as NativeEnvironment
+from jinja2.nativetypes import NativeEnvironment
 from jinja2.runtime import Context, StrictUndefined
 
 from ansible import constants as C
@@ -45,17 +45,17 @@ from ansible.errors import (
     AnsibleOptionsError,
     AnsibleUndefinedVariable,
 )
-from ansible.module_utils.six import string_types, text_type
-from ansible.module_utils._text import to_native, to_text, to_bytes
+from ansible.module_utils.six import string_types
+from ansible.module_utils.common.text.converters import to_native, to_text, to_bytes
 from ansible.module_utils.common.collections import is_sequence
 from ansible.plugins.loader import filter_loader, lookup_loader, test_loader
-from ansible.template.native_helpers import ansible_native_concat, ansible_eval_concat, ansible_concat
+from ansible.template.native_helpers import AnsibleUndefined, ansible_native_concat, ansible_eval_concat, ansible_concat
 from ansible.template.template import AnsibleJ2Template
 from ansible.template.vars import AnsibleJ2Vars
 from ansible.utils.display import Display
 from ansible.utils.listify import listify_lookup_plugin_terms
 from ansible.utils.native_jinja import NativeJinjaText
-from ansible.utils.unsafe_proxy import wrap_var
+from ansible.utils.unsafe_proxy import to_unsafe_text, wrap_var, AnsibleUnsafeText, AnsibleUnsafeBytes, NativeJinjaUnsafeText
 
 display = Display()
 
@@ -86,26 +86,26 @@ def generate_ansible_template_vars(path, fullpath=None, dest_path=None):
         template_uid = os.stat(b_path).st_uid
 
     temp_vars = {
-        'template_host': to_text(os.uname()[1]),
-        'template_path': path,
+        'template_host': to_unsafe_text(os.uname()[1]),
+        'template_path': to_unsafe_text(path),
         'template_mtime': datetime.datetime.fromtimestamp(os.path.getmtime(b_path)),
-        'template_uid': to_text(template_uid),
+        'template_uid': to_unsafe_text(template_uid),
         'template_run_date': datetime.datetime.now(),
-        'template_destpath': to_native(dest_path) if dest_path else None,
+        'template_destpath': wrap_var(to_native(dest_path)) if dest_path else None,
     }
 
     if fullpath is None:
-        temp_vars['template_fullpath'] = os.path.abspath(path)
+        temp_vars['template_fullpath'] = wrap_var(os.path.abspath(path))
     else:
-        temp_vars['template_fullpath'] = fullpath
+        temp_vars['template_fullpath'] = wrap_var(fullpath)
 
     managed_default = C.DEFAULT_MANAGED_STR
     managed_str = managed_default.format(
-        host=temp_vars['template_host'],
-        uid=temp_vars['template_uid'],
-        file=temp_vars['template_path'],
+        host="{{ template_host }}",
+        uid="{{ template_uid }}",
+        file="{{ template_path }}"
     )
-    temp_vars['ansible_managed'] = to_text(time.strftime(to_native(managed_str), time.localtime(os.path.getmtime(b_path))))
+    temp_vars['ansible_managed'] = time.strftime(to_native(managed_str), time.localtime(os.path.getmtime(b_path)))
 
     return temp_vars
 
@@ -130,7 +130,7 @@ def _escape_backslashes(data, jinja_env):
     backslashes inside of a jinja2 expression.
 
     """
-    if '\\' in data and '{{' in data:
+    if '\\' in data and jinja_env.variable_start_string in data:
         new_data = []
         d2 = jinja_env.preprocess(data)
         in_var = False
@@ -151,6 +151,39 @@ def _escape_backslashes(data, jinja_env):
         data = ''.join(new_data)
 
     return data
+
+
+def _create_overlay(data, overrides, jinja_env):
+    if overrides is None:
+        overrides = {}
+
+    try:
+        has_override_header = data.startswith(JINJA2_OVERRIDE)
+    except (TypeError, AttributeError):
+        has_override_header = False
+
+    if overrides or has_override_header:
+        overlay = jinja_env.overlay(**overrides)
+    else:
+        overlay = jinja_env
+
+    # Get jinja env overrides from template
+    if has_override_header:
+        eol = data.find('\n')
+        line = data[len(JINJA2_OVERRIDE):eol]
+        data = data[eol + 1:]
+        for pair in line.split(','):
+            if ':' not in pair:
+                raise AnsibleError("failed to parse jinja2 override '%s'."
+                                   " Did you use something different from colon as key-value separator?" % pair.strip())
+            (key, val) = pair.split(':', 1)
+            key = key.strip()
+            if hasattr(overlay, key):
+                setattr(overlay, key, ast.literal_eval(val.strip()))
+            else:
+                display.warning(f"Could not find Jinja2 environment setting to override: '{key}'")
+
+    return data, overlay
 
 
 def is_possibly_template(data, jinja_env):
@@ -296,35 +329,6 @@ def _wrap_native_text(func):
     return _update_wrapper(wrapper, func)
 
 
-class AnsibleUndefined(StrictUndefined):
-    '''
-    A custom Undefined class, which returns further Undefined objects on access,
-    rather than throwing an exception.
-    '''
-    def __getattr__(self, name):
-        if name == '__UNSAFE__':
-            # AnsibleUndefined should never be assumed to be unsafe
-            # This prevents ``hasattr(val, '__UNSAFE__')`` from evaluating to ``True``
-            raise AttributeError(name)
-        # Return original Undefined object to preserve the first failure context
-        return self
-
-    def __getitem__(self, key):
-        # Return original Undefined object to preserve the first failure context
-        return self
-
-    def __repr__(self):
-        return 'AnsibleUndefined(hint={0!r}, obj={1!r}, name={2!r})'.format(
-            self._undefined_hint,
-            self._undefined_obj,
-            self._undefined_name
-        )
-
-    def __contains__(self, item):
-        # Return original Undefined object to preserve the first failure context
-        return self
-
-
 class AnsibleContext(Context):
     '''
     A custom context, which intercepts resolve_or_missing() calls and sets a flag
@@ -332,9 +336,20 @@ class AnsibleContext(Context):
     flag is checked post-templating, and (when set) will result in the
     final templated result being wrapped in AnsibleUnsafe.
     '''
+    _disallowed_callables = frozenset({
+        AnsibleUnsafeText._strip_unsafe.__qualname__,
+        AnsibleUnsafeBytes._strip_unsafe.__qualname__,
+        NativeJinjaUnsafeText._strip_unsafe.__qualname__,
+    })
+
     def __init__(self, *args, **kwargs):
         super(AnsibleContext, self).__init__(*args, **kwargs)
         self.unsafe = False
+
+    def call(self, obj, *args, **kwargs):
+        if getattr(obj, '__qualname__', None) in self._disallowed_callables or obj in self._disallowed_callables:
+            raise SecurityError(f"{obj!r} is not safely callable")
+        return super().call(obj, *args, **kwargs)
 
     def _is_unsafe(self, val):
         '''
@@ -412,11 +427,11 @@ class JinjaPluginIntercept(MutableMapping):
 
         self._pluginloader = pluginloader
 
-        # cache of resolved plugins
+        # Jinja environment's mapping of known names (initially just J2 builtins)
         self._delegatee = delegatee
 
-        # track loaded plugins here as cache above includes 'jinja2' filters but ours should override
-        self._loaded_builtins = set()
+        # our names take precedence over Jinja's, but let things we've tried to resolve skip the pluginloader
+        self._seen_it = set()
 
     def __getitem__(self, key):
 
@@ -424,7 +439,10 @@ class JinjaPluginIntercept(MutableMapping):
             raise ValueError('key must be a string, got %s instead' % type(key))
 
         original_exc = None
-        if key not in self._loaded_builtins:
+        if key not in self._seen_it:
+            # this looks too early to set this- it isn't. Setting it here keeps requests for Jinja builtins from
+            # going through the pluginloader more than once, which is extremely slow for something that won't ever succeed.
+            self._seen_it.add(key)
             plugin = None
             try:
                 plugin = self._pluginloader.get(key)
@@ -438,12 +456,12 @@ class JinjaPluginIntercept(MutableMapping):
             if plugin:
                 # set in filter cache and avoid expensive plugin load
                 self._delegatee[key] = plugin.j2_function
-                self._loaded_builtins.add(key)
 
         # raise template syntax error if we could not find ours or jinja2 one
         try:
             func = self._delegatee[key]
         except KeyError as e:
+            self._seen_it.remove(key)
             raise TemplateSyntaxError('Could not load "%s": %s' % (key, to_native(original_exc or e)), 0)
 
         # if i do have func and it is a filter, it nees wrapping
@@ -518,7 +536,7 @@ class AnsibleEnvironment(NativeEnvironment):
     '''
     context_class = AnsibleContext
     template_class = AnsibleJ2Template
-    concat = staticmethod(ansible_eval_concat)
+    concat = staticmethod(ansible_eval_concat)  # type: ignore[assignment]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -533,7 +551,7 @@ class AnsibleEnvironment(NativeEnvironment):
 
 
 class AnsibleNativeEnvironment(AnsibleEnvironment):
-    concat = staticmethod(ansible_native_concat)
+    concat = staticmethod(ansible_native_concat)  # type: ignore[assignment]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -545,14 +563,7 @@ class Templar:
     The main class for templating, with the main entry-point of template().
     '''
 
-    def __init__(self, loader, shared_loader_obj=None, variables=None):
-        if shared_loader_obj is not None:
-            display.deprecated(
-                "The `shared_loader_obj` option to `Templar` is no longer functional, "
-                "ansible.plugins.loader is used directly instead.",
-                version='2.16',
-            )
-
+    def __init__(self, loader, variables=None):
         self._loader = loader
         self._available_variables = {} if variables is None else variables
 
@@ -566,9 +577,6 @@ class Templar:
         )
         self.environment.template_class.environment_class = environment_class
 
-        # jinja2 global is inconsistent across versions, this normalizes them
-        self.environment.globals['dict'] = dict
-
         # Custom globals
         self.environment.globals['lookup'] = self._lookup
         self.environment.globals['query'] = self.environment.globals['q'] = self._query_lookup
@@ -578,10 +586,13 @@ class Templar:
         # the current rendering context under which the templar class is working
         self.cur_context = None
 
-        # FIXME this regex should be re-compiled each time variable_start_string and variable_end_string are changed
-        self.SINGLE_VAR = re.compile(r"^%s\s*(\w*)\s*%s$" % (self.environment.variable_start_string, self.environment.variable_end_string))
+        # this regex is re-compiled each time variable_start_string and variable_end_string are possibly changed
+        self._compile_single_var(self.environment)
 
         self.jinja2_native = C.DEFAULT_JINJA2_NATIVE
+
+    def _compile_single_var(self, env):
+        self.SINGLE_VAR = re.compile(r"^%s\s*(\w*)\s*%s$" % (env.variable_start_string, env.variable_end_string))
 
     def copy_with_new_env(self, environment_class=AnsibleEnvironment, **kwargs):
         r"""Creates a new copy of Templar with a new environment.
@@ -705,7 +716,7 @@ class Templar:
             variable = self._convert_bare_variable(variable)
 
         if isinstance(variable, string_types):
-            if not self.is_possibly_template(variable):
+            if not self.is_possibly_template(variable, overrides):
                 return variable
 
             # Check to see if the string we are trying to render is just referencing a single
@@ -730,6 +741,7 @@ class Templar:
                 disable_lookups=disable_lookups,
                 convert_data=convert_data,
             )
+            self._compile_single_var(self.environment)
 
             return result
 
@@ -776,8 +788,9 @@ class Templar:
 
     templatable = is_template
 
-    def is_possibly_template(self, data):
-        return is_possibly_template(data, self.environment)
+    def is_possibly_template(self, data, overrides=None):
+        data, env = _create_overlay(data, overrides, self.environment)
+        return is_possibly_template(data, env)
 
     def _convert_bare_variable(self, variable):
         '''
@@ -801,7 +814,7 @@ class Templar:
     def _now_datetime(self, utc=False, fmt=None):
         '''jinja2 global function to return current datetime, potentially formatted via strftime'''
         if utc:
-            now = datetime.datetime.utcnow()
+            now = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
         else:
             now = datetime.datetime.now()
 
@@ -810,12 +823,12 @@ class Templar:
 
         return now
 
-    def _query_lookup(self, name, *args, **kwargs):
+    def _query_lookup(self, name, /, *args, **kwargs):
         ''' wrapper for lookup, force wantlist true'''
         kwargs['wantlist'] = True
         return self._lookup(name, *args, **kwargs)
 
-    def _lookup(self, name, *args, **kwargs):
+    def _lookup(self, name, /, *args, **kwargs):
         instance = lookup_loader.get(name, loader=self._loader, templar=self)
 
         if instance is None:
@@ -918,31 +931,12 @@ class Templar:
         if fail_on_undefined is None:
             fail_on_undefined = self._fail_on_undefined_errors
 
-        has_template_overrides = data.startswith(JINJA2_OVERRIDE)
-
         try:
             # NOTE Creating an overlay that lives only inside do_template means that overrides are not applied
             # when templating nested variables in AnsibleJ2Vars where Templar.environment is used, not the overlay.
-            # This is historic behavior that is kept for backwards compatibility.
-            if overrides:
-                myenv = self.environment.overlay(overrides)
-            elif has_template_overrides:
-                myenv = self.environment.overlay()
-            else:
-                myenv = self.environment
-
-            # Get jinja env overrides from template
-            if has_template_overrides:
-                eol = data.find('\n')
-                line = data[len(JINJA2_OVERRIDE):eol]
-                data = data[eol + 1:]
-                for pair in line.split(','):
-                    if ':' not in pair:
-                        raise AnsibleError("failed to parse jinja2 override '%s'."
-                                           " Did you use something different from colon as key-value separator?" % pair.strip())
-                    (key, val) = pair.split(':', 1)
-                    key = key.strip()
-                    setattr(myenv, key, ast.literal_eval(val.strip()))
+            data, myenv = _create_overlay(data, overrides, self.environment)
+            # in case delimiters change
+            self._compile_single_var(myenv)
 
             if escape_backslashes:
                 # Allow users to specify backslashes in playbooks as "\\" instead of as "\\\\".
@@ -950,7 +944,7 @@ class Templar:
 
             try:
                 t = myenv.from_string(data)
-            except TemplateSyntaxError as e:
+            except (TemplateSyntaxError, SyntaxError) as e:
                 raise AnsibleError("template error while templating string: %s. String: %s" % (to_native(e), to_native(data)), orig_exc=e)
             except Exception as e:
                 if 'recursion' in to_native(e):
@@ -970,7 +964,7 @@ class Templar:
             # In case this is a recursive call and we set different concat
             # function up the stack, reset it in case the value of convert_data
             # changed in this call
-            self.environment.concat = self.environment.__class__.concat
+            myenv.concat = myenv.__class__.concat
             # the concat function is set for each Ansible environment,
             # however for convert_data=False we need to use the concat
             # function that avoids any evaluation and set it temporarily
@@ -978,13 +972,13 @@ class Templar:
             # the concat function is called internally in Jinja,
             # most notably for macro execution
             if not self.jinja2_native and not convert_data:
-                self.environment.concat = ansible_concat
+                myenv.concat = ansible_concat
 
             self.cur_context = t.new_context(jvars, shared=True)
             rf = t.root_render_func(self.cur_context)
 
             try:
-                res = self.environment.concat(rf)
+                res = myenv.concat(rf)
                 unsafe = getattr(self.cur_context, 'unsafe', False)
                 if unsafe:
                     res = wrap_var(res)
@@ -1012,7 +1006,7 @@ class Templar:
                 # "Hello world\n!\n" instead of "Hello world!\n".
                 res_newlines = _count_newlines_from_end(res)
                 if data_newlines > res_newlines:
-                    res += self.environment.newline_sequence * (data_newlines - res_newlines)
+                    res += myenv.newline_sequence * (data_newlines - res_newlines)
                     if unsafe:
                         res = wrap_var(res)
             return res

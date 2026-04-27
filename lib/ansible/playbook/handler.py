@@ -19,14 +19,14 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from ansible.playbook.attribute import FieldAttribute
+from ansible.playbook.attribute import NonInheritableFieldAttribute
 from ansible.playbook.task import Task
 from ansible.module_utils.six import string_types
 
 
 class Handler(Task):
 
-    listen = FieldAttribute(isa='list', default=list, listof=string_types, static=True)
+    listen = NonInheritableFieldAttribute(isa='list', default=list, listof=string_types, static=True)
 
     def __init__(self, block=None, role=None, task_include=None):
         self.notified_hosts = []
@@ -52,6 +52,9 @@ class Handler(Task):
 
     def remove_host(self, host):
         self.notified_hosts = [h for h in self.notified_hosts if h != host]
+
+    def clear_hosts(self):
+        self.notified_hosts = []
 
     def is_host_notified(self, host):
         return host in self.notified_hosts
