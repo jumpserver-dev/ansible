@@ -18,7 +18,6 @@
 from __future__ import (absolute_import, division, print_function)
 __metaclass__ = type
 
-from ansible.module_utils.six import string_types
 from ansible.module_utils.parsing.convert_bool import boolean
 from ansible.plugins.action import ActionBase
 from ansible.utils.vars import isidentifier
@@ -28,6 +27,7 @@ class ActionModule(ActionBase):
 
     TRANSFERS_FILES = False
     _VALID_ARGS = frozenset(('aggregate', 'data', 'per_host'))
+    _requires_connection = False
 
     # TODO: document this in non-empty set_stats.py module
     def run(self, tmp=None, task_vars=None):

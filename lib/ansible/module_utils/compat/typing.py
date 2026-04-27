@@ -13,13 +13,13 @@ except Exception:  # pylint: disable=broad-except
     pass
 
 try:
-    from typing import *  # type: ignore[misc]
+    from typing import *  # type: ignore[assignment,no-redef]
 except Exception:  # pylint: disable=broad-except
     pass
 
 
 try:
-    cast
+    cast  # type: ignore[used-before-def]
 except NameError:
     def cast(typ, val):  # type: ignore[no-redef]
         return val

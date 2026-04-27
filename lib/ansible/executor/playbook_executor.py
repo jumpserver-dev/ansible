@@ -24,7 +24,7 @@ import os
 from ansible import constants as C
 from ansible import context
 from ansible.executor.task_queue_manager import TaskQueueManager, AnsibleEndPlay
-from ansible.module_utils._text import to_text
+from ansible.module_utils.common.text.converters import to_text
 from ansible.module_utils.parsing.convert_bool import boolean
 from ansible.plugins.loader import become_loader, connection_loader, shell_loader
 from ansible.playbook import Playbook
@@ -99,11 +99,11 @@ class PlaybookExecutor:
                     playbook_collection = resource[2]
                 else:
                     playbook_path = playbook
-                    # not fqcn, but might still be colleciotn playbook
+                    # not fqcn, but might still be collection playbook
                     playbook_collection = _get_collection_name_from_path(playbook)
 
                 if playbook_collection:
-                    display.warning("running playbook inside collection {0}".format(playbook_collection))
+                    display.v("running playbook inside collection {0}".format(playbook_collection))
                     AnsibleCollectionConfig.default_collection = playbook_collection
                 else:
                     AnsibleCollectionConfig.default_collection = None
@@ -148,7 +148,7 @@ class PlaybookExecutor:
                             encrypt = var.get("encrypt", None)
                             salt_size = var.get("salt_size", None)
                             salt = var.get("salt", None)
-                            unsafe = var.get("unsafe", None)
+                            unsafe = boolean(var.get("unsafe", False))
 
                             if vname not in self._variable_manager.extra_vars:
                                 if self._tqm:
@@ -238,7 +238,7 @@ class PlaybookExecutor:
                             else:
                                 basedir = '~/'
 
-                            (retry_name, _) = os.path.splitext(os.path.basename(playbook_path))
+                            (retry_name, ext) = os.path.splitext(os.path.basename(playbook_path))
                             filename = os.path.join(basedir, "%s.retry" % retry_name)
                             if self._generate_retry_inventory(filename, retries):
                                 display.display("\tto retry, use: --limit @%s\n" % filename)

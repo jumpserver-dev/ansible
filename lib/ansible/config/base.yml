@@ -1,6 +1,32 @@
 # Copyright (c) 2017 Ansible Project
 # GNU General Public License v3.0+ (see COPYING or https://www.gnu.org/licenses/gpl-3.0.txt)
 ---
+_DISABLE_BACKPORTED_INSPECTIONS:
+  name: Disable inspections backported from future Ansible Core releases
+  default: false
+  description:
+    - When true, bypasses backported content inspections from future Ansible Core releases.
+    - Unsupported, for internal use only.
+  env: [ { name: _ANSIBLE_DISABLE_BACKPORTED_INSPECTIONS } ]
+  ini:
+    - { key: _disable_backported_inspections, section: defaults }
+  type: boolean
+  version_added: '2.16'
+ALLOW_BROKEN_CONDITIONALS:
+  name: Allow broken conditionals
+  default: true
+  description:
+    - When true (default), this option allows conditionals with non-boolean results to be used.
+    - A deprecation warning will be emitted in these cases.
+    - When false, non-boolean conditionals result in an error.
+    - Such results often indicate unintentional use of templates where they are not supported, resulting in a conditional that is always true.
+    - When this option is enabled, conditional expressions which are a literal ``None`` or empty string will evaluate as true for backwards compatibility.
+    - This configuration was backported from Ansible Core 2.19 to enable detection and correction of problematic conditional expressions that default to an error in Ansible Core 2.19+.
+  env: [{name: ANSIBLE_ALLOW_BROKEN_CONDITIONALS}]
+  ini:
+  - {key: allow_broken_conditionals, section: defaults}
+  type: boolean
+  version_added: '2.16'
 ANSIBLE_HOME:
   name: The Ansible home path
   description:
@@ -37,20 +63,9 @@ ANSIBLE_COW_ACCEPTLIST:
   default: ['bud-frogs', 'bunny', 'cheese', 'daemon', 'default', 'dragon', 'elephant-in-snake', 'elephant', 'eyes', 'hellokitty', 'kitty', 'luke-koala', 'meow', 'milk', 'moofasa', 'moose', 'ren', 'sheep', 'small', 'stegosaurus', 'stimpy', 'supermilker', 'three-eyes', 'turkey', 'turtle', 'tux', 'udder', 'vader-koala', 'vader', 'www']
   description: Accept list of cowsay templates that are 'safe' to use, set to empty list if you want to enable all installed templates.
   env:
-  - name: ANSIBLE_COW_WHITELIST
-    deprecated:
-      why: normalizing names to new standard
-      version: "2.15"
-      alternatives: 'ANSIBLE_COW_ACCEPTLIST'
   - name: ANSIBLE_COW_ACCEPTLIST
     version_added: '2.11'
   ini:
-  - key: cow_whitelist
-    section: defaults
-    deprecated:
-      why: normalizing names to new standard
-      version: "2.15"
-      alternatives: 'cowsay_enabled_stencils'
   - key: cowsay_enabled_stencils
     section: defaults
     version_added: '2.11'
@@ -211,12 +226,18 @@ COLLECTIONS_PATHS:
   default: '{{ ANSIBLE_HOME ~ "/collections:/usr/share/ansible/collections" }}'
   type: pathspec
   env:
-  - name: ANSIBLE_COLLECTIONS_PATHS  # TODO: Deprecate this and ini once PATH has been in a few releases.
+  - name: ANSIBLE_COLLECTIONS_PATHS
+    deprecated:
+      why: does not fit var naming standard, use the singular form ANSIBLE_COLLECTIONS_PATH instead
+      version: "2.19"
   - name: ANSIBLE_COLLECTIONS_PATH
     version_added: '2.10'
   ini:
   - key: collections_paths
     section: defaults
+    deprecated:
+      why: does not fit var naming standard, use the singular form collections_path instead
+      version: "2.19"
   - key: collections_path
     section: defaults
     version_added: '2.10'
@@ -231,11 +252,7 @@ COLLECTIONS_ON_ANSIBLE_VERSION_MISMATCH:
     warning: issue a warning but continue
     ignore: just continue silently
   default: warning
-_COLOR_DEFAULTS: &color
-  name: placeholder for color settings' defaults
-  choices: ['black', 'bright gray', 'blue', 'white', 'green', 'bright blue', 'cyan', 'bright green', 'red', 'bright cyan', 'purple', 'bright red', 'yellow', 'bright purple', 'dark gray', 'bright yellow', 'magenta', 'bright magenta', 'normal']
 COLOR_CHANGED:
-  <<: *color
   name: Color for 'changed' task status
   default: yellow
   description: Defines the color to use on 'Changed' task status
@@ -243,7 +260,6 @@ COLOR_CHANGED:
   ini:
   - {key: changed, section: colors}
 COLOR_CONSOLE_PROMPT:
-  <<: *color
   name: "Color for ansible-console's prompt task status"
   default: white
   description: Defines the default color to use for ansible-console
@@ -252,7 +268,6 @@ COLOR_CONSOLE_PROMPT:
   - {key: console_prompt, section: colors}
   version_added: "2.7"
 COLOR_DEBUG:
-  <<: *color
   name: Color for debug statements
   default: dark gray
   description: Defines the color to use when emitting debug messages
@@ -260,7 +275,6 @@ COLOR_DEBUG:
   ini:
   - {key: debug, section: colors}
 COLOR_DEPRECATE:
-  <<: *color
   name: Color for deprecation messages
   default: purple
   description: Defines the color to use when emitting deprecation messages
@@ -268,7 +282,6 @@ COLOR_DEPRECATE:
   ini:
   - {key: deprecate, section: colors}
 COLOR_DIFF_ADD:
-  <<: *color
   name: Color for diff added display
   default: green
   description: Defines the color to use when showing added lines in diffs
@@ -277,7 +290,6 @@ COLOR_DIFF_ADD:
   - {key: diff_add, section: colors}
   yaml: {key: display.colors.diff.add}
 COLOR_DIFF_LINES:
-  <<: *color
   name: Color for diff lines display
   default: cyan
   description: Defines the color to use when showing diffs
@@ -285,7 +297,6 @@ COLOR_DIFF_LINES:
   ini:
   - {key: diff_lines, section: colors}
 COLOR_DIFF_REMOVE:
-  <<: *color
   name: Color for diff removed display
   default: red
   description: Defines the color to use when showing removed lines in diffs
@@ -293,7 +304,6 @@ COLOR_DIFF_REMOVE:
   ini:
   - {key: diff_remove, section: colors}
 COLOR_ERROR:
-  <<: *color
   name: Color for error messages
   default: red
   description: Defines the color to use when emitting error messages
@@ -302,7 +312,6 @@ COLOR_ERROR:
   - {key: error, section: colors}
   yaml: {key: colors.error}
 COLOR_HIGHLIGHT:
-  <<: *color
   name: Color for highlighting
   default: white
   description: Defines the color to use for highlighting
@@ -310,7 +319,6 @@ COLOR_HIGHLIGHT:
   ini:
   - {key: highlight, section: colors}
 COLOR_OK:
-  <<: *color
   name: Color for 'ok' task status
   default: green
   description: Defines the color to use when showing 'OK' task status
@@ -318,7 +326,6 @@ COLOR_OK:
   ini:
   - {key: ok, section: colors}
 COLOR_SKIP:
-  <<: *color
   name: Color for 'skip' task status
   default: cyan
   description: Defines the color to use when showing 'Skipped' task status
@@ -326,7 +333,6 @@ COLOR_SKIP:
   ini:
   - {key: skip, section: colors}
 COLOR_UNREACHABLE:
-  <<: *color
   name: Color for 'unreachable' host state
   default: bright red
   description: Defines the color to use on 'Unreachable' status
@@ -334,7 +340,6 @@ COLOR_UNREACHABLE:
   ini:
   - {key: unreachable, section: colors}
 COLOR_VERBOSE:
-  <<: *color
   name: Color for verbose messages
   default: blue
   description: Defines the color to use when emitting verbose messages. i.e those that show with '-v's.
@@ -342,7 +347,6 @@ COLOR_VERBOSE:
   ini:
   - {key: verbose, section: colors}
 COLOR_WARN:
-  <<: *color
   name: Color for warning messages
   default: bright purple
   description: Defines the color to use when emitting warning messages
@@ -502,7 +506,7 @@ DEFAULT_BECOME_EXE:
   - {key: become_exe, section: privilege_escalation}
 DEFAULT_BECOME_FLAGS:
   name: Set 'become' executable options
-  default: ~
+  default: ''
   description: Flags to pass to the privilege escalation executable.
   env: [{name: ANSIBLE_BECOME_FLAGS}]
   ini:
@@ -549,20 +553,9 @@ CALLBACKS_ENABLED:
     - "List of enabled callbacks, not all callbacks need enabling,
       but many of those shipped with Ansible do as we don't want them activated by default."
   env:
-  - name: ANSIBLE_CALLBACK_WHITELIST
-    deprecated:
-      why: normalizing names to new standard
-      version: "2.15"
-      alternatives: 'ANSIBLE_CALLBACKS_ENABLED'
   - name: ANSIBLE_CALLBACKS_ENABLED
     version_added: '2.11'
   ini:
-  - key: callback_whitelist
-    section: defaults
-    deprecated:
-      why: normalizing names to new standard
-      version: "2.15"
-      alternatives: 'callbacks_enabled'
   - key: callbacks_enabled
     section: defaults
     version_added: '2.11'
@@ -878,8 +871,8 @@ DEFAULT_MODULE_COMPRESSION:
   env: []
   ini:
   - {key: module_compression, section: defaults}
-# vars:
-#   - name: ansible_module_compression
+  vars:
+    - name: ansible_module_compression
 DEFAULT_MODULE_NAME:
   name: Default adhoc module
   default: command
@@ -967,9 +960,9 @@ DEFAULT_PRIVATE_ROLE_VARS:
   name: Private role variables
   default: False
   description:
-    - Makes role variables inaccessible from other roles.
-    - This was introduced as a way to reset role variables to default values if
-      a role is used more than once in a playbook.
+    - By default, imported roles publish their variables to the play and other roles, this setting can avoid that.
+    - This was introduced as a way to reset role variables to default values if a role is used more than once in a playbook.
+    - Included roles only make their variables public at execution, unlike imported roles which happen at playbook compile time.
   env: [{name: ANSIBLE_PRIVATE_ROLE_VARS}]
   ini:
   - {key: private_role_vars, section: defaults}
@@ -1025,6 +1018,19 @@ DEFAULT_STDOUT_CALLBACK:
   env: [{name: ANSIBLE_STDOUT_CALLBACK}]
   ini:
   - {key: stdout_callback, section: defaults}
+EDITOR:
+  name: editor application touse
+  default: vi
+  descrioption:
+    - for the cases in which Ansible needs to return a file within an editor, this chooses the application to use
+  ini:
+    - section: defaults
+      key: editor
+      version_added: '2.15'
+  env:
+    - name: ANSIBLE_EDITOR
+      version_added: '2.15'
+    - name: EDITOR
 ENABLE_TASK_DEBUGGER:
   name: Whether to enable the task debugger
   default: False
@@ -1105,10 +1111,11 @@ DEFAULT_TIMEOUT:
   - {key: timeout, section: defaults}
   type: integer
 DEFAULT_TRANSPORT:
-  # note that ssh_utils refs this and needs to be updated if removed
   name: Connection plugin
-  default: smart
-  description: "Default connection plugin to use, the 'smart' option will toggle between 'ssh' and 'paramiko' depending on controller OS and ssh versions"
+  default: ssh
+  description:
+    - Can be any connection plugin available to your ansible installation.
+    - There is also a (DEPRECATED) special 'smart' option, that will toggle between 'ssh' and 'paramiko' depending on controller OS and ssh versions.
   env: [{name: ANSIBLE_TRANSPORT}]
   ini:
   - {key: transport, section: defaults}
@@ -1156,6 +1163,14 @@ DEFAULT_VAULT_IDENTITY:
   ini:
   - {key: vault_identity, section: defaults}
   yaml: {key: defaults.vault_identity}
+VAULT_ENCRYPT_SALT:
+  name: Vault salt to use for encryption
+  default: ~
+  description: 'The salt to use for the vault encryption. If it is not provided, a random salt will be used.'
+  env: [{name: ANSIBLE_VAULT_ENCRYPT_SALT}]
+  ini:
+  - {key: vault_encrypt_salt, section: defaults}
+  version_added: '2.15'
 DEFAULT_VAULT_ENCRYPT_IDENTITY:
   name: Vault id to use for encryption
   description: 'The vault_id to use for encrypting by default. If multiple vault_ids are provided, this specifies which to use for encryption. The --encrypt-vault-id cli option overrides the configured value.'
@@ -1337,6 +1352,15 @@ GALAXY_IGNORE_CERTS:
   ini:
   - {key: ignore_certs, section: galaxy}
   type: boolean
+GALAXY_SERVER_TIMEOUT:
+  name: Default timeout to use for API calls
+  description:
+    - The default timeout for Galaxy API calls. Galaxy servers that don't configure a specific timeout will fall back to this value.
+  env: [{name: ANSIBLE_GALAXY_SERVER_TIMEOUT}]
+  default: 60
+  ini:
+  - {key: server_timeout, section: galaxy}
+  type: int
 GALAXY_ROLE_SKELETON:
   name: Galaxy role skeleton directory
   description: Role skeleton directory to use as a template for the ``init`` action in ``ansible-galaxy``/``ansible-galaxy role``, same as ``--role-skeleton``.
@@ -1367,6 +1391,15 @@ GALAXY_COLLECTION_SKELETON_IGNORE:
   ini:
   - {key: collection_skeleton_ignore, section: galaxy}
   type: list
+GALAXY_COLLECTIONS_PATH_WARNING:
+  name: "ansible-galaxy collection install colections path warnings"
+  description: "whether ``ansible-galaxy collection install`` should warn about ``--collections-path`` missing from configured :ref:`collections_paths`"
+  default: true
+  type: bool
+  env: [{name: ANSIBLE_GALAXY_COLLECTIONS_PATH_WARNING}]
+  ini:
+    - {key: collections_path_warning, section: galaxy}
+  version_added: "2.16"
 # TODO: unused?
 #GALAXY_SCMS:
 #  name: Galaxy SCMS
@@ -1407,7 +1440,7 @@ GALAXY_DISPLAY_PROGRESS:
   default: ~
   description:
   - Some steps in ``ansible-galaxy`` display a progress wheel which can cause issues on certain displays or when
-    outputing the stdout to a file.
+    outputting the stdout to a file.
   - This config option controls whether the display wheel is shown or not.
   - The default is to show the display wheel if stdout has a tty.
   env: [{name: ANSIBLE_GALAXY_DISPLAY_PROGRESS}]
@@ -1549,13 +1582,13 @@ _INTERPRETER_PYTHON_DISTRO_MAP:
 INTERPRETER_PYTHON_FALLBACK:
   name: Ordered list of Python interpreters to check for in discovery
   default:
+  - python3.12
   - python3.11
   - python3.10
   - python3.9
   - python3.8
   - python3.7
   - python3.6
-  - python3.5
   - /usr/bin/python3
   - /usr/libexec/platform-python
   - python2.7
@@ -1592,7 +1625,7 @@ INVALID_TASK_ATTRIBUTE_FAILED:
       section: defaults
   version_added: "2.7"
 INVENTORY_ANY_UNPARSED_IS_FAILED:
-  name: Controls whether any unparseable inventory source is a fatal error
+  name: Controls whether any unparsable inventory source is a fatal error
   default: False
   description: >
     If 'true', it is a fatal error when any given inventory source
@@ -1753,14 +1786,38 @@ MODULE_IGNORE_EXTS:
   ini:
   - {key: module_ignore_exts, section: defaults}
   type: list
+MODULE_STRICT_UTF8_RESPONSE:
+  name: Module strict UTF-8 response
+  description:
+    - Enables whether module responses are evaluated for containing non UTF-8 data
+    - Disabling this may result in unexpected behavior
+    - Only ansible-core should evaluate this configuration
+  env: [{name: ANSIBLE_MODULE_STRICT_UTF8_RESPONSE}]
+  ini:
+    - {key: module_strict_utf8_response, section: defaults}
+  type: bool
+  default: True
 OLD_PLUGIN_CACHE_CLEARING:
-  description: Previously Ansible would only clear some of the plugin loading caches when loading new roles, this led to some behaviours in which a plugin loaded in prevoius plays would be unexpectedly 'sticky'. This setting allows to return to that behaviour.
+  description: Previously Ansible would only clear some of the plugin loading caches when loading new roles, this led to some behaviours in which a plugin loaded in previous plays would be unexpectedly 'sticky'. This setting allows to return to that behaviour.
   env: [{name: ANSIBLE_OLD_PLUGIN_CACHE_CLEAR}]
   ini:
   - {key: old_plugin_cache_clear, section: defaults}
   type: boolean
   default: False
   version_added: "2.8"
+PAGER:
+  name: pager application to use
+  default: less
+  descrioption:
+    - for the cases in which Ansible needs to return output in pageable fashion, this chooses the application to use
+  ini:
+    - section: defaults
+      key: pager
+      version_added: '2.15'
+  env:
+    - name: ANSIBLE_PAGER
+      version_added: '2.15'
+    - name: PAGER
 PARAMIKO_HOST_KEY_AUTO_ADD:
   # TODO: move to plugin
   default: False
@@ -2042,6 +2099,10 @@ STRING_CONVERSION_ACTION:
     - section: defaults
       key: string_conversion_action
   type: string
+  deprecated:
+    why: This option is no longer used in the Ansible Core code base.
+    version: "2.19"
+    alternatives: There is no alternative at the moment. A different mechanism would have to be implemented in the current code base.
 VALIDATE_ACTION_GROUP_METADATA:
   version_added: '2.12'
   description:

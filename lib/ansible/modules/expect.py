@@ -13,7 +13,7 @@ module: expect
 version_added: '2.0'
 short_description: Executes a command and responds to prompts
 description:
-     - The C(expect) module executes a command and responds to prompts.
+     - The M(ansible.builtin.expect) module executes a command and responds to prompts.
      - The given command will be executed on all selected nodes. It will not be
        processed through the shell, so variables like C($HOME) and operations
        like C("<"), C(">"), C("|"), and C("&") will not work.
@@ -43,10 +43,10 @@ options:
         responses. List functionality is new in 2.1.
     required: true
   timeout:
-    type: int
+    type: raw
     description:
       - Amount of time in seconds to wait for the expected strings. Use
-        C(null) to disable timeout.
+        V(null) to disable timeout.
     default: 30
   echo:
     description:
@@ -69,7 +69,7 @@ notes:
   - If you want to run a command through the shell (say you are using C(<),
     C(>), C(|), and so on), you must specify a shell in the command such as
     C(/bin/bash -c "/path/to/something | grep else").
-  - The question, or key, under I(responses) is a python regex match. Case
+  - The question, or key, under O(responses) is a python regex match. Case
     insensitive searches are indicated with a prefix of C(?i).
   - The C(pexpect) library used by this module operates with a search window
     of 2000 bytes, and does not use a multiline regex match. To perform a
@@ -81,6 +81,8 @@ notes:
   - The M(ansible.builtin.expect) module is designed for simple scenarios.
     For more complex needs, consider the use of expect code with the M(ansible.builtin.shell)
     or M(ansible.builtin.script) modules. (An example is part of the M(ansible.builtin.shell) module documentation).
+  - If the command returns non UTF-8 data, it must be encoded to avoid issues. One option is to pipe
+    the output through C(base64).
 seealso:
 - module: ansible.builtin.script
 - module: ansible.builtin.shell
@@ -119,7 +121,8 @@ except ImportError:
     HAS_PEXPECT = False
 
 from ansible.module_utils.basic import AnsibleModule, missing_required_lib
-from ansible.module_utils._text import to_bytes, to_native, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_native
+from ansible.module_utils.common.validation import check_type_int
 
 
 def response_closure(module, question, responses):
@@ -145,7 +148,7 @@ def main():
             creates=dict(type='path'),
             removes=dict(type='path'),
             responses=dict(type='dict', required=True),
-            timeout=dict(type='int', default=30),
+            timeout=dict(type='raw', default=30),
             echo=dict(type='bool', default=False),
         )
     )
@@ -160,6 +163,13 @@ def main():
     removes = module.params['removes']
     responses = module.params['responses']
     timeout = module.params['timeout']
+    if timeout is not None:
+        try:
+            timeout = check_type_int(timeout)
+        except TypeError as te:
+            module.fail_json(
+                msg="argument 'timeout' is of type {timeout_type} and we were unable to convert to int: {te}".format(timeout_type=type(timeout), te=te)
+            )
     echo = module.params['echo']
 
     events = dict()

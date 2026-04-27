@@ -12,7 +12,8 @@ DOCUMENTATION = r"""
     description:
       - The csvfile lookup reads the contents of a file in CSV (comma-separated value) format.
         The lookup looks for the row where the first column matches keyname (which can be multiple words)
-        and returns the value in the C(col) column (default 1, which indexed from 0 means the second column in the file).
+        and returns the value in the O(col) column (default 1, which indexed from 0 means the second column in the file).
+      - At least one keyname is required, provided as a positional argument(s) to the lookup.
     options:
       col:
         description:  column to return (0 indexed).
@@ -20,7 +21,7 @@ DOCUMENTATION = r"""
       default:
         description: what to return if the value is not found in the file.
       delimiter:
-        description: field separator in the file, for a tab you can specify C(TAB) or C(\t).
+        description: field separator in the file, for a tab you can specify V(TAB) or V(\\t).
         default: TAB
       file:
         description: name of the CSV/TSV file to open.
@@ -35,6 +36,9 @@ DOCUMENTATION = r"""
       - For historical reasons, in the search keyname, quotes are treated
         literally and cannot be used around the string unless they appear
         (escaped as required) in the first column of the file you are parsing.
+    seealso:
+      - ref: playbook_task_paths
+        description: Search paths used for relative files.
 """
 
 EXAMPLES = """
@@ -54,8 +58,24 @@ EXAMPLES = """
     neighbor_as: "{{ csvline[5] }}"
     neigh_int_ip: "{{ csvline[6] }}"
   vars:
-    csvline = "{{ lookup('ansible.builtin.csvfile', bgp_neighbor_ip, file='bgp_neighbors.csv', delimiter=',') }}"
+    csvline: "{{ lookup('ansible.builtin.csvfile', bgp_neighbor_ip, file='bgp_neighbors.csv', delimiter=',') }}"
   delegate_to: localhost
+
+# Contents of debug.csv
+# test1 ret1.1 ret2.1
+# test2 ret1.2 ret2.2
+# test3 ret1.3 ret2.3
+
+- name: "Lookup multiple keynames in the first column (index 0), returning the values from the second column (index 1)"
+  debug:
+    msg: "{{ lookup('csvfile', 'test1', 'test2', file='debug.csv', delimiter=' ') }}"
+
+- name: Lookup multiple keynames using old style syntax
+  debug:
+    msg: "{{ lookup('csvfile', term1, term2) }}"
+  vars:
+    term1: "test1 file=debug.csv delimiter=' '"
+    term2: "test2 file=debug.csv delimiter=' '"
 """
 
 RETURN = """
@@ -75,7 +95,7 @@ from ansible.errors import AnsibleError, AnsibleAssertionError
 from ansible.parsing.splitter import parse_kv
 from ansible.plugins.lookup import LookupBase
 from ansible.module_utils.six import PY2
-from ansible.module_utils._text import to_bytes, to_native, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_native, to_text
 
 
 class CSVRecoder:
@@ -142,6 +162,9 @@ class LookupModule(LookupBase):
 
         # populate options
         paramvals = self.get_options()
+
+        if not terms:
+            raise AnsibleError('Search key is required but was not found')
 
         for term in terms:
             kv = parse_kv(term)

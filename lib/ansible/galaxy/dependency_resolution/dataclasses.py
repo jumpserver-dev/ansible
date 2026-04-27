@@ -27,9 +27,10 @@ if t.TYPE_CHECKING:
     )
 
 
-from ansible.errors import AnsibleError
+from ansible.errors import AnsibleError, AnsibleAssertionError
 from ansible.galaxy.api import GalaxyAPI
-from ansible.module_utils._text import to_bytes, to_native, to_text
+from ansible.galaxy.collection import HAS_PACKAGING, PkgReq
+from ansible.module_utils.common.text.converters import to_bytes, to_native, to_text
 from ansible.module_utils.common.arg_spec import ArgumentSpecValidator
 from ansible.utils.collection_loader import AnsibleCollectionRef
 from ansible.utils.display import Display
@@ -166,6 +167,7 @@ def _is_concrete_artifact_pointer(tested_str):
 
 
 class _ComputedReqKindsMixin:
+    UNIQUE_ATTRS = ('fqcn', 'ver', 'src', 'type')
 
     def __init__(self, *args, **kwargs):
         if not self.may_have_offline_galaxy_info:
@@ -179,6 +181,12 @@ class _ComputedReqKindsMixin:
                 self.name,
                 self.ver
             )
+
+    def __hash__(self):
+        return hash(tuple(getattr(self, attr) for attr in _ComputedReqKindsMixin.UNIQUE_ATTRS))
+
+    def __eq__(self, candidate):
+        return hash(self) == hash(candidate)
 
     @classmethod
     def from_dir_path_as_unknown(  # type: ignore[misc]
@@ -208,10 +216,15 @@ class _ComputedReqKindsMixin:
             return cls.from_dir_path_implicit(dir_path)
 
     @classmethod
-    def from_dir_path(cls, dir_path, art_mgr):
+    def from_dir_path(  # type: ignore[misc]
+            cls,  # type: t.Type[Collection]
+            dir_path,  # type: bytes
+            art_mgr,  # type: ConcreteArtifactsManager
+    ):  # type: (...)  -> Collection
         """Make collection from an directory with metadata."""
-        b_dir_path = to_bytes(dir_path, errors='surrogate_or_strict')
-        if not _is_collection_dir(b_dir_path):
+        if dir_path.endswith(to_bytes(os.path.sep)):
+            dir_path = dir_path.rstrip(to_bytes(os.path.sep))
+        if not _is_collection_dir(dir_path):
             display.warning(
                 u"Collection at '{path!s}' does not have a {manifest_json!s} "
                 u'file, nor has it {galaxy_yml!s}: cannot detect version.'.
@@ -260,6 +273,8 @@ class _ComputedReqKindsMixin:
         regardless of whether any of known metadata files are present.
         """
         # There is no metadata, but it isn't required for a functional collection. Determine the namespace.name from the path.
+        if dir_path.endswith(to_bytes(os.path.sep)):
+            dir_path = dir_path.rstrip(to_bytes(os.path.sep))
         u_dir_path = to_text(dir_path, errors='surrogate_or_strict')
         path_list = u_dir_path.split(os.path.sep)
         req_name = '.'.join(path_list[-2:])
@@ -268,13 +283,25 @@ class _ComputedReqKindsMixin:
     @classmethod
     def from_string(cls, collection_input, artifacts_manager, supplemental_signatures):
         req = {}
-        if _is_concrete_artifact_pointer(collection_input):
-            # Arg is a file path or URL to a collection
+        if _is_concrete_artifact_pointer(collection_input) or AnsibleCollectionRef.is_valid_collection_name(collection_input):
+            # Arg is a file path or URL to a collection, or just a collection
             req['name'] = collection_input
-        else:
+        elif ':' in collection_input:
             req['name'], _sep, req['version'] = collection_input.partition(':')
             if not req['version']:
                 del req['version']
+        else:
+            if not HAS_PACKAGING:
+                raise AnsibleError("Failed to import packaging, check that a supported version is installed")
+            try:
+                pkg_req = PkgReq(collection_input)
+            except Exception as e:
+                # packaging doesn't know what this is, let it fly, better errors happen in from_requirement_dict
+                req['name'] = collection_input
+            else:
+                req['name'] = pkg_req.name
+                if pkg_req.specifier:
+                    req['version'] = to_text(pkg_req.specifier)
         req['signatures'] = supplemental_signatures
 
         return cls.from_requirement_dict(req, artifacts_manager)
@@ -407,6 +434,9 @@ class _ComputedReqKindsMixin:
                 format(not_url=req_source.api_server),
             )
 
+        if req_type == 'dir' and req_source.endswith(os.path.sep):
+            req_source = req_source.rstrip(os.path.sep)
+
         tmp_inst_req = cls(req_name, req_version, req_source, req_type, req_signature_sources)
 
         if req_type not in {'galaxy', 'subdirs'} and req_name is None:
@@ -535,6 +565,27 @@ class _ComputedReqKindsMixin:
         return not self.is_concrete_artifact
 
     @property
+    def is_pinned(self):
+        """Indicate if the version set is considered pinned.
+
+        This essentially computes whether the version field of the current
+        requirement explicitly requests a specific version and not an allowed
+        version range.
+
+        It is then used to help the resolvelib-based dependency resolver judge
+        whether it's acceptable to consider a pre-release candidate version
+        despite pre-release installs not being requested by the end-user
+        explicitly.
+
+        See https://github.com/ansible/ansible/pull/81606 for extra context.
+        """
+        version_string = self.ver[0]
+        return version_string.isdigit() or not (
+            version_string == '*' or
+            version_string.startswith(('<', '>', '!='))
+        )
+
+    @property
     def source_info(self):
         return self._source_info
 
@@ -571,3 +622,13 @@ class Candidate(
 
     def __init__(self, *args, **kwargs):
         super(Candidate, self).__init__()
+
+    def with_signatures_repopulated(self):  # type: (Candidate) -> Candidate
+        """Populate a new Candidate instance with Galaxy signatures.
+        :raises AnsibleAssertionError: If the supplied candidate is not sourced from a Galaxy-like index.
+        """
+        if self.type != 'galaxy':
+            raise AnsibleAssertionError(f"Invalid collection type for {self!r}: unable to get signatures from a galaxy server.")
+
+        signatures = self.src.get_collection_signatures(self.namespace, self.name, self.ver)
+        return self.__class__(self.fqcn, self.ver, self.src, self.type, frozenset([*self.signatures, *signatures]))

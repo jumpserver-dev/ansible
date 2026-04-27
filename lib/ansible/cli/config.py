@@ -23,7 +23,7 @@ from ansible import constants as C
 from ansible.cli.arguments import option_helpers as opt_help
 from ansible.config.manager import ConfigManager, Setting
 from ansible.errors import AnsibleError, AnsibleOptionsError
-from ansible.module_utils._text import to_native, to_text, to_bytes
+from ansible.module_utils.common.text.converters import to_native, to_text, to_bytes
 from ansible.module_utils.common.json import json_dump
 from ansible.module_utils.six import string_types
 from ansible.parsing.quoting import is_quoted
@@ -67,7 +67,7 @@ class ConfigCLI(CLI):
             desc="View ansible configuration.",
         )
 
-        common = opt_help.argparse.ArgumentParser(add_help=False)
+        common = opt_help.ArgumentParser(add_help=False)
         opt_help.add_verbosity_options(common)
         common.add_argument('-c', '--config', dest='config_file',
                             help="path to configuration file, defaults to first file found in precedence.")
@@ -187,7 +187,7 @@ class ConfigCLI(CLI):
 
         # pylint: disable=unreachable
         try:
-            editor = shlex.split(os.environ.get('EDITOR', 'vi'))
+            editor = shlex.split(C.config.get_config_value('EDITOR'))
             editor.append(self.config_file)
             subprocess.call(editor)
         except Exception as e:
@@ -270,7 +270,7 @@ class ConfigCLI(CLI):
             if not settings[setting].get('description'):
                 continue
 
-            default = settings[setting].get('default', '')
+            default = self.config.template_default(settings[setting].get('default', ''), get_constants())
             if subkey == 'env':
                 stype = settings[setting].get('type', '')
                 if stype == 'boolean':
@@ -314,7 +314,7 @@ class ConfigCLI(CLI):
 
         return data
 
-    def _get_settings_ini(self, settings):
+    def _get_settings_ini(self, settings, seen):
 
         sections = {}
         for o in sorted(settings.keys()):
@@ -327,7 +327,7 @@ class ConfigCLI(CLI):
 
             if not opt.get('description'):
                 # its a plugin
-                new_sections = self._get_settings_ini(opt)
+                new_sections = self._get_settings_ini(opt, seen)
                 for s in new_sections:
                     if s in sections:
                         sections[s].extend(new_sections[s])
@@ -343,36 +343,45 @@ class ConfigCLI(CLI):
 
             if 'ini' in opt and opt['ini']:
                 entry = opt['ini'][-1]
+                if entry['section'] not in seen:
+                    seen[entry['section']] = []
                 if entry['section'] not in sections:
                     sections[entry['section']] = []
 
-                default = opt.get('default', '')
-                if opt.get('type', '') == 'list' and not isinstance(default, string_types):
-                    # python lists are not valid ini ones
-                    default = ', '.join(default)
-                elif default is None:
-                    default = ''
+                # avoid dupes
+                if entry['key'] not in seen[entry['section']]:
+                    seen[entry['section']].append(entry['key'])
 
-                if context.CLIARGS['commented']:
-                    entry['key'] = ';%s' % entry['key']
+                    default = self.config.template_default(opt.get('default', ''), get_constants())
+                    if opt.get('type', '') == 'list' and not isinstance(default, string_types):
+                        # python lists are not valid ini ones
+                        default = ', '.join(default)
+                    elif default is None:
+                        default = ''
 
-                key = desc + '\n%s=%s' % (entry['key'], default)
-                sections[entry['section']].append(key)
+                    if context.CLIARGS['commented']:
+                        entry['key'] = ';%s' % entry['key']
+
+                    key = desc + '\n%s=%s' % (entry['key'], default)
+
+                    sections[entry['section']].append(key)
 
         return sections
 
     def execute_init(self):
+        """Create initial configuration"""
 
+        seen = {}
         data = []
         config_entries = self._list_entries_from_args()
         plugin_types = config_entries.pop('PLUGINS', None)
 
         if context.CLIARGS['format'] == 'ini':
-            sections = self._get_settings_ini(config_entries)
+            sections = self._get_settings_ini(config_entries, seen)
 
             if plugin_types:
                 for ptype in plugin_types:
-                    plugin_sections = self._get_settings_ini(plugin_types[ptype])
+                    plugin_sections = self._get_settings_ini(plugin_types[ptype], seen)
                     for s in plugin_sections:
                         if s in sections:
                             sections[s].extend(plugin_sections[s])
@@ -405,14 +414,16 @@ class ConfigCLI(CLI):
             if context.CLIARGS['format'] == 'display':
                 if isinstance(config[setting], Setting):
                     # proceed normally
+                    value = config[setting].value
                     if config[setting].origin == 'default':
                         color = 'green'
+                        value = self.config.template_default(value, get_constants())
                     elif config[setting].origin == 'REQUIRED':
                         # should include '_terms', '_input', etc
                         color = 'red'
                     else:
                         color = 'yellow'
-                    msg = "%s(%s) = %s" % (setting, config[setting].origin, config[setting].value)
+                    msg = "%s(%s) = %s" % (setting, config[setting].origin, value)
                 else:
                     color = 'green'
                     msg = "%s(%s) = %s" % (setting, 'default', config[setting].get('default'))

@@ -10,6 +10,7 @@ import operator
 import os
 
 from copy import copy as shallowcopy
+from functools import cache
 
 from jinja2.exceptions import UndefinedError
 
@@ -18,7 +19,7 @@ from ansible import context
 from ansible.errors import AnsibleError, AnsibleParserError, AnsibleUndefinedVariable, AnsibleAssertionError
 from ansible.module_utils.six import string_types
 from ansible.module_utils.parsing.convert_bool import boolean
-from ansible.module_utils._text import to_text, to_native
+from ansible.module_utils.common.text.converters import to_text, to_native
 from ansible.parsing.dataloader import DataLoader
 from ansible.playbook.attribute import Attribute, FieldAttribute, ConnectionFieldAttribute, NonInheritableFieldAttribute
 from ansible.plugins.loader import module_loader, action_loader
@@ -69,12 +70,21 @@ def _validate_action_group_metadata(action, found_group_metadata, fq_group_name)
         display.warning(" ".join(metadata_warnings))
 
 
+class _ClassProperty:
+    def __set_name__(self, owner, name):
+        self.name = name
+
+    def __get__(self, obj, objtype=None):
+        return getattr(objtype, f'_{self.name}')()
+
+
 class FieldAttributeBase:
 
+    fattributes = _ClassProperty()
+
     @classmethod
-    @property
-    def fattributes(cls):
-        # FIXME is this worth caching?
+    @cache
+    def _fattributes(cls):
         fattributes = {}
         for class_obj in reversed(cls.__mro__):
             for name, attr in list(class_obj.__dict__.items()):
@@ -476,6 +486,8 @@ class FieldAttributeBase:
             if not isinstance(value, attribute.class_type):
                 raise TypeError("%s is not a valid %s (got a %s instead)" % (name, attribute.class_type, type(value)))
             value.post_validate(templar=templar)
+        else:
+            raise AnsibleAssertionError(f"Unknown value for attribute.isa: {attribute.isa}")
         return value
 
     def set_to_context(self, name):
@@ -578,6 +590,13 @@ class FieldAttributeBase:
                 _validate_variable_keys(ds)
                 return combine_vars(self.vars, ds)
             elif isinstance(ds, list):
+                display.deprecated(
+                    (
+                        'Specifying a list of dictionaries for vars is deprecated in favor of '
+                        'specifying a dictionary.'
+                    ),
+                    version='2.18'
+                )
                 all_vars = self.vars
                 for item in ds:
                     if not isinstance(item, dict):
@@ -590,7 +609,7 @@ class FieldAttributeBase:
             else:
                 raise ValueError
         except ValueError as e:
-            raise AnsibleParserError("Vars in a %s must be specified as a dictionary, or a list of dictionaries" % self.__class__.__name__,
+            raise AnsibleParserError("Vars in a %s must be specified as a dictionary" % self.__class__.__name__,
                                      obj=ds, orig_exc=e)
         except TypeError as e:
             raise AnsibleParserError("Invalid variable name in vars specified for %s: %s" % (self.__class__.__name__, e), obj=ds, orig_exc=e)
@@ -618,7 +637,7 @@ class FieldAttributeBase:
         else:
             combined = value + new_value
 
-        return [i for i, _ in itertools.groupby(combined) if i is not None]
+        return [i for i, dummy in itertools.groupby(combined) if i is not None]
 
     def dump_attrs(self):
         '''
@@ -712,7 +731,7 @@ class Base(FieldAttributeBase):
 
     # flags and misc. settings
     environment = FieldAttribute(isa='list', extend=True, prepend=True)
-    no_log = FieldAttribute(isa='bool')
+    no_log = FieldAttribute(isa='bool', default=C.DEFAULT_NO_LOG)
     run_once = FieldAttribute(isa='bool')
     ignore_errors = FieldAttribute(isa='bool')
     ignore_unreachable = FieldAttribute(isa='bool')

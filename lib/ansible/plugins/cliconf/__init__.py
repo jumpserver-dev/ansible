@@ -24,7 +24,7 @@ from functools import wraps
 
 from ansible.plugins import AnsiblePlugin
 from ansible.errors import AnsibleError, AnsibleConnectionFailure
-from ansible.module_utils._text import to_bytes, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_text
 
 try:
     from scp import SCPClient
@@ -276,7 +276,7 @@ class CliconfBase(AnsiblePlugin):
                 'diff_replace': [list of supported replace values],
                 'output': [list of supported command output format]
             }
-        :return: capability as json string
+        :return: capability as dict
         """
         result = {}
         result['rpc'] = self.get_base_rpc()
@@ -360,7 +360,6 @@ class CliconfBase(AnsiblePlugin):
                         remote host before triggering timeout exception
         :return: None
         """
-        """Fetch file over scp/sftp from remote device"""
         ssh = self._connection.paramiko_conn._connect_uncached()
         if proto == 'scp':
             if not HAS_SCP:

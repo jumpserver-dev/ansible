@@ -13,9 +13,9 @@ import sys
 
 # Used for determining if the system is running a new enough python version
 # and should only restrict on our documented minimum versions
-if sys.version_info < (3, 9):
+if sys.version_info < (3, 10):
     raise SystemExit(
-        'ERROR: Ansible requires Python 3.9 or newer on the controller. '
+        'ERROR: Ansible requires Python 3.10 or newer on the controller. '
         'Current version: %s' % ''.join(sys.version.splitlines())
     )
 
@@ -97,11 +97,12 @@ from ansible.cli.arguments import option_helpers as opt_help
 from ansible.errors import AnsibleError, AnsibleOptionsError, AnsibleParserError
 from ansible.inventory.manager import InventoryManager
 from ansible.module_utils.six import string_types
-from ansible.module_utils._text import to_bytes, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_text
+from ansible.module_utils.common.collections import is_sequence
 from ansible.module_utils.common.file import is_executable
 from ansible.parsing.dataloader import DataLoader
 from ansible.parsing.vault import PromptVaultSecret, get_file_vault_secret
-from ansible.plugins.loader import add_all_plugin_dirs
+from ansible.plugins.loader import add_all_plugin_dirs, init_plugin_loader
 from ansible.release import __version__
 from ansible.utils.collection_loader import AnsibleCollectionConfig
 from ansible.utils.collection_loader._collection_finder import _get_collection_name_from_path
@@ -119,7 +120,7 @@ except ImportError:
 class CLI(ABC):
     ''' code behind bin/ansible* programs '''
 
-    PAGER = 'less'
+    PAGER = C.config.get_config_value('PAGER')
 
     # -F (quit-if-one-screen) -R (allow raw ansi control chars)
     # -S (chop long lines) -X (disable termcap init and de-init)
@@ -153,6 +154,13 @@ class CLI(ABC):
         running an Ansible command.
         """
         self.parse()
+
+        # Initialize plugin loader after parse, so that the init code can utilize parsed arguments
+        cli_collections_path = context.CLIARGS.get('collections_path') or []
+        if not is_sequence(cli_collections_path):
+            # In some contexts ``collections_path`` is singular
+            cli_collections_path = [cli_collections_path]
+        init_plugin_loader(cli_collections_path)
 
         display.vv(to_text(opt_help.version(self.parser.prog)))
 
@@ -494,11 +502,11 @@ class CLI(ABC):
         # this is a much simpler form of what is in pydoc.py
         if not sys.stdout.isatty():
             display.display(text, screen_only=True)
-        elif 'PAGER' in os.environ:
+        elif CLI.PAGER:
             if sys.platform == 'win32':
                 display.display(text, screen_only=True)
             else:
-                CLI.pager_pipe(text, os.environ['PAGER'])
+                CLI.pager_pipe(text)
         else:
             p = subprocess.Popen('less --version', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             p.communicate()
@@ -508,12 +516,12 @@ class CLI(ABC):
                 display.display(text, screen_only=True)
 
     @staticmethod
-    def pager_pipe(text, cmd):
+    def pager_pipe(text):
         ''' pipe text through a pager '''
-        if 'LESS' not in os.environ:
+        if 'less' in CLI.PAGER:
             os.environ['LESS'] = CLI.LESS_OPTS
         try:
-            cmd = subprocess.Popen(cmd, shell=True, stdin=subprocess.PIPE, stdout=sys.stdout)
+            cmd = subprocess.Popen(CLI.PAGER, shell=True, stdin=subprocess.PIPE, stdout=sys.stdout)
             cmd.communicate(input=to_bytes(text))
         except IOError:
             pass
@@ -522,6 +530,10 @@ class CLI(ABC):
 
     @staticmethod
     def _play_prereqs():
+        # TODO: evaluate moving all of the code that touches ``AnsibleCollectionConfig``
+        # into ``init_plugin_loader`` so that we can specifically remove
+        # ``AnsibleCollectionConfig.playbook_paths`` to make it immutable after instantiation
+
         options = context.CLIARGS
 
         # all needs loader

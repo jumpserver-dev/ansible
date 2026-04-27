@@ -34,7 +34,7 @@ from ansible.errors.yaml_strings import (
     YAML_POSITION_DETAILS,
     YAML_AND_SHORTHAND_ERROR,
 )
-from ansible.module_utils._text import to_native, to_text
+from ansible.module_utils.common.text.converters import to_native, to_text
 
 
 class AnsibleError(Exception):
@@ -209,6 +209,14 @@ class AnsibleError(Exception):
             error_message += '\n(specified line no longer in file, maybe it changed?)'
 
         return error_message
+
+
+class AnsiblePromptInterrupt(AnsibleError):
+    '''User interrupt'''
+
+
+class AnsiblePromptNoninteractive(AnsibleError):
+    '''Unable to get user input'''
 
 
 class AnsibleAssertionError(AnsibleError, AssertionError):

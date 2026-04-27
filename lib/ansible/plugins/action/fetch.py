@@ -19,7 +19,7 @@ __metaclass__ = type
 
 import os
 import base64
-from ansible.errors import AnsibleError, AnsibleActionFail, AnsibleActionSkip
+from ansible.errors import AnsibleConnectionFailure, AnsibleError, AnsibleActionFail, AnsibleActionSkip
 from ansible.module_utils.common.text.converters import to_bytes, to_text
 from ansible.module_utils.six import string_types
 from ansible.module_utils.parsing.convert_bool import boolean
@@ -75,6 +75,8 @@ class ActionModule(ActionBase):
                 # Follow symlinks because fetch always follows symlinks
                 try:
                     remote_stat = self._execute_remote_stat(source, all_vars=task_vars, follow=True)
+                except AnsibleConnectionFailure:
+                    raise
                 except AnsibleError as ae:
                     result['changed'] = False
                     result['file'] = source
@@ -148,6 +150,10 @@ class ActionModule(ActionBase):
                     # destination filename
                     base = os.path.basename(source_local)
                     dest = os.path.join(dest, base)
+
+                    if os.path.isdir(to_bytes(dest, errors='surrogate_or_strict')):
+                        raise AnsibleActionFail(
+                            f"calculated dest '{dest}' is an existing directory, use another path that does not point to an existing directory")
                 if not dest.startswith("/"):
                     # if dest does not start with "/", we'll assume a relative path
                     dest = self._loader.path_dwim(dest)

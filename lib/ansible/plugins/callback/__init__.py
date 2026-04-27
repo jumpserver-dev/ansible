@@ -38,7 +38,7 @@ from ansible.parsing.yaml.objects import AnsibleUnicode
 from ansible.plugins import AnsiblePlugin
 from ansible.utils.color import stringc
 from ansible.utils.display import Display
-from ansible.utils.unsafe_proxy import AnsibleUnsafeText, NativeJinjaUnsafeText
+from ansible.utils.unsafe_proxy import AnsibleUnsafeText, NativeJinjaUnsafeText, _is_unsafe
 from ansible.vars.clean import strip_internal_keys, module_response_deepcopy
 
 import yaml
@@ -113,6 +113,8 @@ def _munge_data_for_lossy_yaml(scalar):
 
 def _pretty_represent_str(self, data):
     """Uses block style for multi-line strings"""
+    if _is_unsafe(data):
+        data = data._strip_unsafe()
     data = text_type(data)
     if _should_use_block(data):
         style = '|'
@@ -163,7 +165,7 @@ class CallbackBase(AnsiblePlugin):
 
         self._hide_in_debug = ('changed', 'failed', 'skipped', 'invocation', 'skip_reason')
 
-    ''' helper for callbacks, so they don't all have to include deepcopy '''
+    # helper for callbacks, so they don't all have to include deepcopy
     _copy_result = deepcopy
 
     def set_option(self, k, v):

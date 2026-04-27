@@ -55,7 +55,7 @@ except ImportError:
 from ansible.errors import AnsibleError, AnsibleAssertionError
 from ansible import constants as C
 from ansible.module_utils.six import binary_type
-from ansible.module_utils._text import to_bytes, to_text, to_native
+from ansible.module_utils.common.text.converters import to_bytes, to_text, to_native
 from ansible.utils.display import Display
 from ansible.utils.path import makedirs_safe, unfrackpath
 
@@ -658,7 +658,10 @@ class VaultLib:
         b_vaulttext = to_bytes(vaulttext, errors='strict', encoding='utf-8')
 
         if self.secrets is None:
-            raise AnsibleVaultError("A vault password must be specified to decrypt data")
+            msg = "A vault password must be specified to decrypt data"
+            if filename:
+                msg += " in file %s" % to_native(filename)
+            raise AnsibleVaultError(msg)
 
         if not is_encrypted(b_vaulttext):
             msg = "input is not vault encrypted data. "
@@ -784,13 +787,13 @@ class VaultEditor:
 
             passes = 3
             with open(tmp_path, "wb") as fh:
-                for _ in range(passes):
+                for dummy in range(passes):
                     fh.seek(0, 0)
                     # get a random chunk of data, each pass with other length
                     chunk_len = random.randint(max_chunk_len // 2, max_chunk_len)
                     data = os.urandom(chunk_len)
 
-                    for _ in range(0, file_len // chunk_len):
+                    for dummy in range(0, file_len // chunk_len):
                         fh.write(data)
                     fh.write(data[:file_len % chunk_len])
 
@@ -1041,10 +1044,10 @@ class VaultEditor:
         since in the plaintext case, the original contents can be of any text encoding
         or arbitrary binary data.
 
-        When used to write the result of vault encryption, the val of the 'data' arg
-        should be a utf-8 encoded byte string and not a text typ and not a text type..
+        When used to write the result of vault encryption, the value of the 'data' arg
+        should be a utf-8 encoded byte string and not a text type.
 
-        When used to write the result of vault decryption, the val of the 'data' arg
+        When used to write the result of vault decryption, the value of the 'data' arg
         should be a byte string and not a text type.
 
         :arg data: the byte string (bytes) data
@@ -1074,6 +1077,8 @@ class VaultEditor:
             output = getattr(sys.stdout, 'buffer', sys.stdout)
             output.write(b_file_data)
         else:
+            if not os.access(os.path.dirname(thefile), os.W_OK):
+                raise AnsibleError("Destination '%s' not writable" % (os.path.dirname(thefile)))
             # file names are insecure and prone to race conditions, so remove and create securely
             if os.path.isfile(thefile):
                 if shred:
@@ -1123,7 +1128,7 @@ class VaultEditor:
             os.chown(dest, prev.st_uid, prev.st_gid)
 
     def _editor_shell_command(self, filename):
-        env_editor = os.environ.get('EDITOR', 'vi')
+        env_editor = C.config.get_config_value('EDITOR')
         editor = shlex.split(env_editor)
         editor.append(filename)
 
@@ -1196,13 +1201,20 @@ class VaultAES256:
         return to_bytes(hexlify(b_hmac), errors='surrogate_or_strict'), hexlify(b_ciphertext)
 
     @classmethod
+    def _get_salt(cls):
+        custom_salt = C.config.get_config_value('VAULT_ENCRYPT_SALT')
+        if not custom_salt:
+            custom_salt = os.urandom(32)
+        return to_bytes(custom_salt)
+
+    @classmethod
     def encrypt(cls, b_plaintext, secret, salt=None):
 
         if secret is None:
             raise AnsibleVaultError('The secret passed to encrypt() was None')
 
         if salt is None:
-            b_salt = os.urandom(32)
+            b_salt = cls._get_salt()
         elif not salt:
             raise AnsibleVaultError('Empty or invalid salt passed to encrypt()')
         else:

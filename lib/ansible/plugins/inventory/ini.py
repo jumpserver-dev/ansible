@@ -75,12 +75,13 @@ host4 # same host as above, but member of 2 groups, will inherit vars from both
 
 import ast
 import re
+import warnings
 
 from ansible.inventory.group import to_safe_group_name
 from ansible.plugins.inventory import BaseFileInventoryPlugin
 
 from ansible.errors import AnsibleError, AnsibleParserError
-from ansible.module_utils._text import to_bytes, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_text
 from ansible.utils.shlex import shlex_split
 
 
@@ -341,9 +342,11 @@ class InventoryModule(BaseFileInventoryPlugin):
         (int, dict, list, unicode string, etc).
         '''
         try:
-            v = ast.literal_eval(v)
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                v = ast.literal_eval(v)
         # Using explicit exceptions.
-        # Likely a string that literal_eval does not like. We wil then just set it.
+        # Likely a string that literal_eval does not like. We will then just set it.
         except ValueError:
             # For some reason this was thought to be malformed.
             pass

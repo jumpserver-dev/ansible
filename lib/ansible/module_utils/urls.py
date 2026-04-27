@@ -53,7 +53,7 @@ import socket
 import sys
 import tempfile
 import traceback
-import types
+import types  # pylint: disable=unused-import
 
 from contextlib import contextmanager
 
@@ -88,7 +88,7 @@ from ansible.module_utils.common.collections import Mapping, is_sequence
 from ansible.module_utils.six import PY2, PY3, string_types
 from ansible.module_utils.six.moves import cStringIO
 from ansible.module_utils.basic import get_distribution, missing_required_lib
-from ansible.module_utils._text import to_bytes, to_native, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_native, to_text
 
 try:
     # python3
@@ -99,7 +99,7 @@ except ImportError:
     import urllib2 as urllib_request  # type: ignore[no-redef]
     from urllib2 import AbstractHTTPHandler, BaseHandler  # type: ignore[no-redef]
 
-urllib_request.HTTPRedirectHandler.http_error_308 = urllib_request.HTTPRedirectHandler.http_error_307  # type: ignore[attr-defined]
+urllib_request.HTTPRedirectHandler.http_error_308 = urllib_request.HTTPRedirectHandler.http_error_307  # type: ignore[attr-defined,assignment]
 
 try:
     from ansible.module_utils.six.moves.urllib.parse import urlparse, urlunparse, unquote
@@ -115,7 +115,7 @@ except Exception:
 
 try:
     # SNI Handling needs python2.7.9's SSLContext
-    from ssl import create_default_context, SSLContext
+    from ssl import create_default_context, SSLContext  # pylint: disable=unused-import
     HAS_SSLCONTEXT = True
 except ImportError:
     HAS_SSLCONTEXT = False
@@ -129,13 +129,13 @@ if not HAS_SSLCONTEXT:
         try:
             from urllib3.contrib.pyopenssl import PyOpenSSLContext
         except Exception:
-            from requests.packages.urllib3.contrib.pyopenssl import PyOpenSSLContext
+            from requests.packages.urllib3.contrib.pyopenssl import PyOpenSSLContext  # type: ignore[no-redef]
         HAS_URLLIB3_PYOPENSSLCONTEXT = True
     except Exception:
         # urllib3<1.15,>=1.6
         try:
             try:
-                from urllib3.contrib.pyopenssl import ssl_wrap_socket
+                from urllib3.contrib.pyopenssl import ssl_wrap_socket  # type: ignore[attr-defined]
             except Exception:
                 from requests.packages.urllib3.contrib.pyopenssl import ssl_wrap_socket
             HAS_URLLIB3_SSL_WRAP_SOCKET = True
@@ -160,7 +160,7 @@ if not HAS_SSLCONTEXT and HAS_SSL:
         libssl = ctypes.CDLL(libssl_name)
         for method in ('TLSv1_1_method', 'TLSv1_2_method'):
             try:
-                libssl[method]
+                libssl[method]  # pylint: disable=pointless-statement
                 # Found something - we'll let openssl autonegotiate and hope
                 # the server has disabled sslv2 and 3.  best we can do.
                 PROTOCOL = ssl.PROTOCOL_SSLv23
@@ -181,7 +181,7 @@ try:
     from ssl import match_hostname, CertificateError
 except ImportError:
     try:
-        from backports.ssl_match_hostname import match_hostname, CertificateError  # type: ignore[misc]
+        from backports.ssl_match_hostname import match_hostname, CertificateError  # type: ignore[assignment]
     except ImportError:
         HAS_MATCH_HOSTNAME = False
 
@@ -196,7 +196,7 @@ except ImportError:
 
 # Old import for GSSAPI authentication, this is not used in urls.py but kept for backwards compatibility.
 try:
-    import urllib_gssapi
+    import urllib_gssapi  # pylint: disable=unused-import
     HAS_GSSAPI = True
 except ImportError:
     HAS_GSSAPI = False
@@ -288,7 +288,7 @@ if not HAS_MATCH_HOSTNAME:
     # The following block of code is under the terms and conditions of the
     # Python Software Foundation License
 
-    """The match_hostname() function from Python 3.4, essential when using SSL."""
+    # The match_hostname() function from Python 3.4, essential when using SSL.
 
     try:
         # Divergence: Python-3.7+'s _ssl has this exception type but older Pythons do not
@@ -535,15 +535,18 @@ HTTPSClientAuthHandler = None
 UnixHTTPSConnection = None
 if hasattr(httplib, 'HTTPSConnection') and hasattr(urllib_request, 'HTTPSHandler'):
     class CustomHTTPSConnection(httplib.HTTPSConnection):  # type: ignore[no-redef]
-        def __init__(self, *args, **kwargs):
+        def __init__(self, client_cert=None, client_key=None, *args, **kwargs):
             httplib.HTTPSConnection.__init__(self, *args, **kwargs)
             self.context = None
             if HAS_SSLCONTEXT:
                 self.context = self._context
             elif HAS_URLLIB3_PYOPENSSLCONTEXT:
                 self.context = self._context = PyOpenSSLContext(PROTOCOL)
-            if self.context and self.cert_file:
-                self.context.load_cert_chain(self.cert_file, self.key_file)
+
+            self._client_cert = client_cert
+            self._client_key = client_key
+            if self.context and self._client_cert:
+                self.context.load_cert_chain(self._client_cert, self._client_key)
 
         def connect(self):
             "Connect to a host on a given (SSL) port."
@@ -564,10 +567,10 @@ if hasattr(httplib, 'HTTPSConnection') and hasattr(urllib_request, 'HTTPSHandler
             if HAS_SSLCONTEXT or HAS_URLLIB3_PYOPENSSLCONTEXT:
                 self.sock = self.context.wrap_socket(sock, server_hostname=server_hostname)
             elif HAS_URLLIB3_SSL_WRAP_SOCKET:
-                self.sock = ssl_wrap_socket(sock, keyfile=self.key_file, cert_reqs=ssl.CERT_NONE,  # pylint: disable=used-before-assignment
-                                            certfile=self.cert_file, ssl_version=PROTOCOL, server_hostname=server_hostname)
+                self.sock = ssl_wrap_socket(sock, keyfile=self._client_key, cert_reqs=ssl.CERT_NONE,  # pylint: disable=used-before-assignment
+                                            certfile=self._client_cert, ssl_version=PROTOCOL, server_hostname=server_hostname)
             else:
-                self.sock = ssl.wrap_socket(sock, keyfile=self.key_file, certfile=self.cert_file, ssl_version=PROTOCOL)
+                self.sock = ssl.wrap_socket(sock, keyfile=self._client_key, certfile=self._client_cert, ssl_version=PROTOCOL)
 
     class CustomHTTPSHandler(urllib_request.HTTPSHandler):  # type: ignore[no-redef]
 
@@ -602,10 +605,6 @@ if hasattr(httplib, 'HTTPSConnection') and hasattr(urllib_request, 'HTTPSHandler
             return self.do_open(self._build_https_connection, req)
 
         def _build_https_connection(self, host, **kwargs):
-            kwargs.update({
-                'cert_file': self.client_cert,
-                'key_file': self.client_key,
-            })
             try:
                 kwargs['context'] = self._context
             except AttributeError:
@@ -613,7 +612,7 @@ if hasattr(httplib, 'HTTPSConnection') and hasattr(urllib_request, 'HTTPSHandler
             if self._unix_socket:
                 return UnixHTTPSConnection(self._unix_socket)(host, **kwargs)
             if not HAS_SSLCONTEXT:
-                return CustomHTTPSConnection(host, **kwargs)
+                return CustomHTTPSConnection(host, client_cert=self.client_cert, client_key=self.client_key, **kwargs)
             return httplib.HTTPSConnection(host, **kwargs)
 
     @contextmanager
@@ -772,6 +771,18 @@ def extract_pem_certs(b_data):
         yield match.group(0)
 
 
+def _py2_get_param(headers, param, header='content-type'):
+    m = httplib.HTTPMessage(io.StringIO())
+    cd = headers.getheader(header) or ''
+    try:
+        m.plisttext = cd[cd.index(';'):]
+        m.parseplist()
+    except ValueError:
+        return None
+
+    return m.getparam(param)
+
+
 def get_response_filename(response):
     url = response.geturl()
     path = urlparse(url)[2]
@@ -779,7 +790,12 @@ def get_response_filename(response):
     if filename:
         filename = unquote(filename)
 
-    return response.headers.get_param('filename', header='content-disposition') or filename
+    if PY2:
+        get_param = functools.partial(_py2_get_param, response.headers)
+    else:
+        get_param = response.headers.get_param
+
+    return get_param('filename', header='content-disposition') or filename
 
 
 def parse_content_type(response):
@@ -866,7 +882,7 @@ def RedirectHandlerFactory(follow_redirects=None, validate_certs=True, ca_path=N
         to determine how redirects should be handled in urllib2.
         """
 
-        def redirect_request(self, req, fp, code, msg, hdrs, newurl):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
             if not any((HAS_SSLCONTEXT, HAS_URLLIB3_PYOPENSSLCONTEXT)):
                 handler = maybe_add_ssl_handler(newurl, validate_certs, ca_path=ca_path, ciphers=ciphers)
                 if handler:
@@ -874,23 +890,23 @@ def RedirectHandlerFactory(follow_redirects=None, validate_certs=True, ca_path=N
 
             # Preserve urllib2 compatibility
             if follow_redirects == 'urllib2':
-                return urllib_request.HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, hdrs, newurl)
+                return urllib_request.HTTPRedirectHandler.redirect_request(self, req, fp, code, msg, headers, newurl)
 
             # Handle disabled redirects
             elif follow_redirects in ['no', 'none', False]:
-                raise urllib_error.HTTPError(newurl, code, msg, hdrs, fp)
+                raise urllib_error.HTTPError(newurl, code, msg, headers, fp)
 
             method = req.get_method()
 
             # Handle non-redirect HTTP status or invalid follow_redirects
             if follow_redirects in ['all', 'yes', True]:
                 if code < 300 or code >= 400:
-                    raise urllib_error.HTTPError(req.get_full_url(), code, msg, hdrs, fp)
+                    raise urllib_error.HTTPError(req.get_full_url(), code, msg, headers, fp)
             elif follow_redirects == 'safe':
                 if code < 300 or code >= 400 or method not in ('GET', 'HEAD'):
-                    raise urllib_error.HTTPError(req.get_full_url(), code, msg, hdrs, fp)
+                    raise urllib_error.HTTPError(req.get_full_url(), code, msg, headers, fp)
             else:
-                raise urllib_error.HTTPError(req.get_full_url(), code, msg, hdrs, fp)
+                raise urllib_error.HTTPError(req.get_full_url(), code, msg, headers, fp)
 
             try:
                 # Python 2-3.3
@@ -907,12 +923,12 @@ def RedirectHandlerFactory(follow_redirects=None, validate_certs=True, ca_path=N
             # Support redirect with payload and original headers
             if code in (307, 308):
                 # Preserve payload and headers
-                headers = req.headers
+                req_headers = req.headers
             else:
                 # Do not preserve payload and filter headers
                 data = None
-                headers = dict((k, v) for k, v in req.headers.items()
-                               if k.lower() not in ("content-length", "content-type", "transfer-encoding"))
+                req_headers = dict((k, v) for k, v in req.headers.items()
+                                   if k.lower() not in ("content-length", "content-type", "transfer-encoding"))
 
                 # http://tools.ietf.org/html/rfc7231#section-6.4.4
                 if code == 303 and method != 'HEAD':
@@ -929,7 +945,7 @@ def RedirectHandlerFactory(follow_redirects=None, validate_certs=True, ca_path=N
 
             return RequestWithMethod(newurl,
                                      method=method,
-                                     headers=headers,
+                                     headers=req_headers,
                                      data=data,
                                      origin_req_host=origin_req_host,
                                      unverifiable=True,
@@ -979,7 +995,7 @@ def atexit_remove_file(filename):
             pass
 
 
-def make_context(cafile=None, cadata=None, ciphers=None, validate_certs=True):
+def make_context(cafile=None, cadata=None, ciphers=None, validate_certs=True, client_cert=None, client_key=None):
     if ciphers is None:
         ciphers = []
 
@@ -1005,6 +1021,9 @@ def make_context(cafile=None, cadata=None, ciphers=None, validate_certs=True):
 
     if ciphers:
         context.set_ciphers(':'.join(map(to_native, ciphers)))
+
+    if client_cert:
+        context.load_cert_chain(client_cert, keyfile=client_key)
 
     return context
 
@@ -1309,7 +1328,7 @@ class Request:
                  follow_redirects='urllib2', client_cert=None, client_key=None, cookies=None, unix_socket=None,
                  ca_path=None, unredirected_headers=None, decompress=True, ciphers=None, use_netrc=True):
         """This class works somewhat similarly to the ``Session`` class of from requests
-        by defining a cookiejar that an be used across requests as well as cascaded defaults that
+        by defining a cookiejar that can be used across requests as well as cascaded defaults that
         can apply to repeated requests
 
         For documentation of params, see ``Request.open``
@@ -1461,7 +1480,7 @@ class Request:
                 url = urlunparse(parsed_list)
 
             if use_gssapi:
-                if HTTPGSSAPIAuthHandler:
+                if HTTPGSSAPIAuthHandler:  # type: ignore[truthy-function]
                     handlers.append(HTTPGSSAPIAuthHandler(username, password))
                 else:
                     imp_err_msg = missing_required_lib('gssapi', reason='for use_gssapi=True',
@@ -1495,7 +1514,7 @@ class Request:
                     login = None
 
                 if login:
-                    username, _, password = login
+                    username, dummy, password = login
                     if username and password:
                         headers["Authorization"] = basic_auth_header(username, password)
 
@@ -1514,6 +1533,8 @@ class Request:
                 cadata=cadata,
                 ciphers=ciphers,
                 validate_certs=validate_certs,
+                client_cert=client_cert,
+                client_key=client_key,
             )
             handlers.append(HTTPSClientAuthHandler(client_cert=client_cert,
                                                    client_key=client_key,
@@ -1865,12 +1886,8 @@ def fetch_url(module, url, data=None, headers=None, method=None,
     if not HAS_URLPARSE:
         module.fail_json(msg='urlparse is not installed')
 
-    if not HAS_GZIP and decompress is True:
-        decompress = False
-        module.deprecate(
-            '%s. "decompress" has been automatically disabled to prevent a failure' % GzipDecodedReader.missing_gzip_error(),
-            version='2.16'
-        )
+    if not HAS_GZIP:
+        module.fail_json(msg=GzipDecodedReader.missing_gzip_error())
 
     # ensure we use proper tempdir
     old_tempdir = tempfile.tempdir
@@ -1884,7 +1901,7 @@ def fetch_url(module, url, data=None, headers=None, method=None,
 
     username = module.params.get('url_username', '')
     password = module.params.get('url_password', '')
-    http_agent = module.params.get('http_agent', 'ansible-httpget')
+    http_agent = module.params.get('http_agent', get_user_agent())
     force_basic_auth = module.params.get('force_basic_auth', '')
 
     follow_redirects = module.params.get('follow_redirects', 'urllib2')
@@ -2068,3 +2085,8 @@ def fetch_file(module, url, data=None, headers=None, method=None,
     except Exception as e:
         module.fail_json(msg="Failure downloading %s, %s" % (url, to_native(e)))
     return fetch_temp_file.name
+
+
+def get_user_agent():
+    """Returns a user agent used by open_url"""
+    return u"ansible-httpget"

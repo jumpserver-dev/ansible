@@ -24,6 +24,7 @@ __metaclass__ = type
 
 import errno
 import datetime
+import functools
 import os
 import tarfile
 import tempfile
@@ -35,14 +36,41 @@ from ansible import context
 from ansible.errors import AnsibleError, AnsibleParserError
 from ansible.galaxy.api import GalaxyAPI
 from ansible.galaxy.user_agent import user_agent
-from ansible.module_utils._text import to_native, to_text
+from ansible.module_utils.common.text.converters import to_native, to_text
 from ansible.module_utils.common.yaml import yaml_dump, yaml_load
 from ansible.module_utils.compat.version import LooseVersion
 from ansible.module_utils.urls import open_url
 from ansible.playbook.role.requirement import RoleRequirement
 from ansible.utils.display import Display
+from ansible.utils.path import is_subpath, unfrackpath
 
 display = Display()
+
+
+@functools.cache
+def _check_working_data_filter() -> bool:
+    """
+    Check if tarfile.data_filter implementation is working
+    for the current Python version or not
+    """
+
+    # Implemented the following code to circumvent broken implementation of data_filter
+    # in tarfile. See for more information - https://github.com/python/cpython/issues/107845
+    # deprecated: description='probing broken data filter implementation' python_version='3.11'
+    ret = False
+    if hasattr(tarfile, 'data_filter'):
+        # We explicitly check if tarfile.data_filter is broken or not
+        ti = tarfile.TarInfo('docs/README.md')
+        ti.type = tarfile.SYMTYPE
+        ti.linkname = '../README.md'
+
+        try:
+            tarfile.data_filter(ti, '/foo')
+        except tarfile.LinkOutsideDestinationError:
+            pass
+        else:
+            ret = True
+    return ret
 
 
 class GalaxyRole(object):
@@ -184,7 +212,7 @@ class GalaxyRole(object):
 
         info = dict(
             version=self.version,
-            install_date=datetime.datetime.utcnow().strftime("%c"),
+            install_date=datetime.datetime.now(datetime.timezone.utc).strftime("%c"),
         )
         if not os.path.exists(os.path.join(self.path, 'meta')):
             os.makedirs(os.path.join(self.path, 'meta'))
@@ -359,6 +387,8 @@ class GalaxyRole(object):
                         else:
                             os.makedirs(self.path)
 
+                        resolved_archive = unfrackpath(archive_parent_dir, follow=False)
+
                         # We strip off any higher-level directories for all of the files
                         # contained within the tar file here. The default is 'github_repo-target'.
                         # Gerrit instances, on the other hand, does not have a parent directory at all.
@@ -366,19 +396,36 @@ class GalaxyRole(object):
                             # we only extract files, and remove any relative path
                             # bits that might be in the file for security purposes
                             # and drop any containing directory, as mentioned above
-                            if member.isreg() or member.issym():
-                                n_member_name = to_native(member.name)
-                                n_archive_parent_dir = to_native(archive_parent_dir)
-                                n_parts = n_member_name.replace(n_archive_parent_dir, "", 1).split(os.sep)
-                                n_final_parts = []
-                                for n_part in n_parts:
-                                    # TODO if the condition triggers it produces a broken installation.
-                                    # It will create the parent directory as an empty file and will
-                                    # explode if the directory contains valid files.
-                                    # Leaving this as is since the whole module needs a rewrite.
-                                    if n_part != '..' and not n_part.startswith('~') and '$' not in n_part:
-                                        n_final_parts.append(n_part)
-                                member.name = os.path.join(*n_final_parts)
+                            if not (member.isreg() or member.issym()):
+                                continue
+
+                            for attr in ('name', 'linkname'):
+                                if not (attr_value := getattr(member, attr, None)):
+                                    continue
+
+                                if attr == 'linkname':
+                                    # Symlinks are relative to the link
+                                    relative_to = os.path.dirname(getattr(member, 'name', ''))
+                                else:
+                                    # Normalize paths that start with the archive dir
+                                    attr_value = attr_value.replace(archive_parent_dir, "", 1)
+                                    attr_value = os.path.join(*attr_value.split(os.sep))  # remove leading os.sep
+                                    relative_to = ''
+
+                                full_path = os.path.join(resolved_archive, relative_to, attr_value)
+                                if not is_subpath(full_path, resolved_archive, real=True):
+                                    err = f"Invalid {attr} for tarfile member: path {full_path} is not a subpath of the role {resolved_archive}"
+                                    raise AnsibleError(err)
+
+                                relative_path_dir = os.path.join(resolved_archive, relative_to)
+                                relative_path = os.path.join(*full_path.replace(relative_path_dir, "", 1).split(os.sep))
+                                setattr(member, attr, relative_path)
+
+                            if _check_working_data_filter():
+                                # deprecated: description='extract fallback without filter' python_version='3.11'
+                                role_tar_file.extract(member, to_native(self.path), filter='data')  # type: ignore[call-arg]
+                            else:
+                                # Remove along with manual path filter once Python 3.12 is minimum supported version
                                 role_tar_file.extract(member, to_native(self.path))
 
                         # write out the install info file for later use

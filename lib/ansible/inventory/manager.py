@@ -33,7 +33,7 @@ from ansible import constants as C
 from ansible.errors import AnsibleError, AnsibleOptionsError, AnsibleParserError
 from ansible.inventory.data import InventoryData
 from ansible.module_utils.six import string_types
-from ansible.module_utils._text import to_bytes, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_text
 from ansible.parsing.utils.addresses import parse_address
 from ansible.plugins.loader import inventory_loader
 from ansible.utils.helpers import deduplicate_list
@@ -424,8 +424,6 @@ class InventoryManager(object):
                 elif order not in [None, 'inventory']:
                     raise AnsibleOptionsError("Invalid 'order' specified for inventory hosts: %s" % order)
 
-        if pattern_list and pattern_list[0] != 'localhost':
-            hosts = [h for h in hosts if h.name != 'localhost']
         return hosts
 
     def _evaluate_patterns(self, patterns):

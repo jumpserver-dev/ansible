@@ -16,7 +16,7 @@ from ansible.module_utils.compat.version import LooseVersion
 
 from ansible import constants as C
 from ansible.errors import AnsibleError
-from ansible.module_utils._text import to_bytes, to_native, to_text
+from ansible.module_utils.common.text.converters import to_bytes, to_native, to_text
 from ansible.module_utils.compat.importlib import import_module
 from ansible.plugins.loader import ps_module_utils_loader
 from ansible.utils.collection_loader import resource_from_fqcr
@@ -319,7 +319,7 @@ def _create_powershell_wrapper(b_module_data, module_path, module_args,
 
         exec_manifest["actions"].insert(0, 'async_watchdog')
         exec_manifest["actions"].insert(0, 'async_wrapper')
-        exec_manifest["async_jid"] = str(random.randint(0, 999999999999))
+        exec_manifest["async_jid"] = f'j{random.randint(0, 999999999999)}'
         exec_manifest["async_timeout_sec"] = async_timeout
         exec_manifest["async_startup_timeout"] = C.config.get_config_value("WIN_ASYNC_STARTUP_TIMEOUT", variables=task_vars)
 

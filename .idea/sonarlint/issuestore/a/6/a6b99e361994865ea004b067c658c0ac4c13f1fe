@@ -1,0 +1,19 @@
+
+Mpython:S1066ί"/Merge this if statement with the enclosing one.(’θχΗϋÿÿÿÿ
+npython:S3776"URefactor this function to reduce its Cognitive Complexity from 125 to the 15 allowed.(‰ΑΘ
+Fpython:S5603γ"(Remove this unused function declaration.(ά¥όÿωÿÿÿÿ
+Apython:S5603‚"(Remove this unused function declaration.(έΰφ€
+@python:S5603…"(Remove this unused function declaration.(ϊθ:
+Fpython:S5603"(Remove this unused function declaration.(†Ρ£Χϊÿÿÿÿ
+Apython:S5603‹"(Remove this unused function declaration.( άγ
+Fpython:S5603"(Remove this unused function declaration.(΄…Βωÿÿÿÿ
+Apython:S5603“"(Remove this unused function declaration.(›ί§
+Fpython:S5603—"(Remove this unused function declaration.(•δΰωÿÿÿÿ
+Mpython:S1135±"4Complete the task associated to this "TODO" comment.(μέ
+qpython:S2737ν"XAdd logic to this except clause or eliminate it and rethrow the exception automatically.(€³Ά»
+Epython:S1172Ώ",Remove the unused function parameter "host".(σόρ“
+Tpython:S1172Ώ";Remove the unused function parameter "include_delegate_to".(σόρ“
+mpython:S3776Ώ"TRefactor this function to reduce its Cognitive Complexity from 22 to the 15 allowed.(σόρ“
+rpython:S3776‡"TRefactor this function to reduce its Cognitive Complexity from 55 to the 15 allowed.(§Òωύÿÿÿÿ
+Rpython:S1135‹"4Complete the task associated to this "TODO" comment.(ξΟ§³ϊÿÿÿÿ
+Mpython:S1135±"4Complete the task associated to this "TODO" comment.(ϊΊζΧ

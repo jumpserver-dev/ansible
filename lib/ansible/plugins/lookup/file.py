@@ -28,11 +28,14 @@ DOCUMENTATION = """
     notes:
       - if read in variable context, the file can be interpreted as YAML if the content is valid to the parser.
       - this lookup does not understand 'globbing', use the fileglob lookup instead.
+    seealso:
+      - ref: playbook_task_paths
+        description: Search paths used for relative files.
 """
 
 EXAMPLES = """
 - ansible.builtin.debug:
-    msg: "the value of foo.txt is {{lookup('ansible.builtin.file', '/etc/foo.txt') }}"
+    msg: "the value of foo.txt is {{ lookup('ansible.builtin.file', '/etc/foo.txt') }}"
 
 - name: display multiple file contents
   ansible.builtin.debug: var=item
@@ -50,9 +53,9 @@ RETURN = """
     elements: str
 """
 
-from ansible.errors import AnsibleError, AnsibleParserError
+from ansible.errors import AnsibleError, AnsibleOptionsError, AnsibleLookupError
 from ansible.plugins.lookup import LookupBase
-from ansible.module_utils._text import to_text
+from ansible.module_utils.common.text.converters import to_text
 from ansible.utils.display import Display
 
 display = Display()
@@ -67,11 +70,10 @@ class LookupModule(LookupBase):
 
         for term in terms:
             display.debug("File lookup term: %s" % term)
-
             # Find the file in the expected search path
-            lookupfile = self.find_file_in_search_path(variables, 'files', term)
-            display.vvvv(u"File lookup using %s as file" % lookupfile)
             try:
+                lookupfile = self.find_file_in_search_path(variables, 'files', term, ignore_missing=True)
+                display.vvvv(u"File lookup using %s as file" % lookupfile)
                 if lookupfile:
                     b_contents, show_data = self._loader._get_file_contents(lookupfile)
                     contents = to_text(b_contents, errors='surrogate_or_strict')
@@ -81,8 +83,9 @@ class LookupModule(LookupBase):
                         contents = contents.rstrip()
                     ret.append(contents)
                 else:
-                    raise AnsibleParserError()
-            except AnsibleParserError:
-                raise AnsibleError("could not locate file in lookup: %s" % term)
+                    # TODO: only add search info if abs path?
+                    raise AnsibleOptionsError("file not found, use -vvvvv to see paths searched")
+            except AnsibleError as e:
+                raise AnsibleLookupError("The 'file' lookup had an issue accessing the file '%s'" % term, orig_exc=e)
 
         return ret
