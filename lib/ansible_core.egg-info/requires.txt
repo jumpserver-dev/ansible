@@ -1,0 +1,5 @@
+jinja2>=3.0.0
+PyYAML>=5.1
+cryptography
+packaging
+resolvelib<0.9.0,>=0.5.3
