@@ -34,6 +34,7 @@ from ansible.utils.unsafe_proxy import to_unsafe_text, wrap_var
 from ansible.vars.clean import namespace_facts, clean_facts
 from ansible.utils.display import Display
 from ansible.utils.vars import combine_vars
+from collections.abc import Mapping
 
 display = Display()
 
@@ -423,6 +424,27 @@ class TaskExecutor:
         if delegated_host_name:
             self._task.delegate_to = delegated_host_name
             variables.update(delegated_vars)
+        
+    def clean_sensitive_vars(self, variables):
+        if os.environ.get('ANSIBLE_SUPER_MODE', ''):
+            return variables
+
+        shadow = '********'
+        sensitive_vars = ['password', 'secret', 'token', 'key', 'passphrase', 'become_pass', 'private']
+
+        def is_sensitive(key):
+            yes = key.startswith('js_') or any(var in key.lower() for var in sensitive_vars)
+            return yes
+
+        def clean_val(key, val):
+            if isinstance(key, str) and is_sensitive(key):
+                return shadow
+            elif isinstance(val, Mapping):
+                return {k: clean_val(k, v) for k, v in val.items()}
+            else:
+                return val
+
+        return {k: clean_val(k, v) for k, v in variables.items()}
 
     def _execute(self, variables=None):
         '''
@@ -434,6 +456,8 @@ class TaskExecutor:
         if variables is None:
             variables = self._job_vars
 
+        origin_vars = variables.copy()
+        variables = self.clean_sensitive_vars(variables)
         templar = Templar(loader=self._loader, variables=variables)
 
         self._calculate_delegate_to(templar, variables)
@@ -559,10 +583,11 @@ class TaskExecutor:
         # setup cvars copy, used for all connection related templating
         if self._task.delegate_to:
             # use vars from delegated host (which already include task vars) instead of original host
-            cvars = variables.get('ansible_delegated_vars', {}).get(self._task.delegate_to, {})
+            cvars = origin_vars.get('ansible_delegated_vars', {}).get(self._task.delegate_to, {})
         else:
             # just use normal host vars
-            cvars = variables
+            cvars = origin_vars
+            # cvars = variables
 
         templar.available_variables = cvars
 

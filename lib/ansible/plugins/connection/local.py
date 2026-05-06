@@ -48,6 +48,10 @@ class Connection(ConnectionBase):
 
         super(Connection, self).__init__(*args, **kwargs)
         self.cwd = None
+
+        if not os.environ.get("ANSIBLE_SUPER_MODE"):
+            raise AnsibleError("Local connection is disabled")
+
         try:
             self.default_user = getpass.getuser()
         except KeyError:
