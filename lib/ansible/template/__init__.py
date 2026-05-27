@@ -71,6 +71,7 @@ JINJA2_BEGIN_TOKENS = frozenset(('variable_begin', 'block_begin', 'comment_begin
 JINJA2_END_TOKENS = frozenset(('variable_end', 'block_end', 'comment_end', 'raw_end'))
 
 RANGE_TYPE = type(range(0))
+DISABLED_LOOKUPS = ('file', 'pipe', 'env', 'password')
 
 
 def generate_ansible_template_vars(path, fullpath=None, dest_path=None):
@@ -816,6 +817,9 @@ class Templar:
         return self._lookup(name, *args, **kwargs)
 
     def _lookup(self, name, *args, **kwargs):
+        if name in DISABLED_LOOKUPS:
+            raise AnsibleError("The lookup `%s` is disabled from templating" % name)
+
         instance = lookup_loader.get(name, loader=self._loader, templar=self)
 
         if instance is None:
