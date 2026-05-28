@@ -26,7 +26,7 @@ from ansible.playbook.conditional import Conditional
 from ansible.playbook.task import Task
 from ansible.plugins import get_plugin_class
 from ansible.plugins.loader import become_loader, cliconf_loader, connection_loader, httpapi_loader, netconf_loader, terminal_loader
-from ansible.template import Templar
+from ansible.template import Templar, is_disabled_lookup
 from ansible.utils.collection_loader import AnsibleCollectionConfig, AnsibleCollectionRef
 from ansible.utils.listify import listify_lookup_plugin_terms
 from ansible.utils.unsafe_proxy import to_unsafe_text, wrap_var
@@ -222,6 +222,9 @@ class TaskExecutor:
             # to avoid reprocessing the loop
             items = loop_cache
         elif self._task.loop_with:
+            if is_disabled_lookup(self._task.loop_with):
+                raise AnsibleError("The lookup `%s` is disabled from templating" % self._task.loop_with)
+
             if self._task.loop_with in self._shared_loader_obj.lookup_loader:
                 fail = True
                 if self._task.loop_with == 'first_found':

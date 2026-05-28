@@ -36,7 +36,7 @@ from ansible.module_utils._text import to_text
 from ansible.module_utils.six import text_type, string_types
 from ansible.plugins.loader import lookup_loader
 from ansible.vars.fact_cache import FactCache
-from ansible.template import Templar
+from ansible.template import Templar, is_disabled_lookup
 from ansible.utils.display import Display
 from ansible.utils.listify import listify_lookup_plugin_terms
 from ansible.utils.vars import combine_vars, load_extra_vars, load_options_vars
@@ -544,6 +544,9 @@ class VariableManager:
         items = []
         has_loop = True
         if task.loop_with is not None:
+            if is_disabled_lookup(task.loop_with):
+                raise AnsibleError("The lookup `%s` is disabled from templating" % task.loop_with)
+
             if task.loop_with in lookup_loader:
                 fail = True
                 if task.loop_with == 'first_found':
