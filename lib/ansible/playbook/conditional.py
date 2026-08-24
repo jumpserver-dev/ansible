@@ -124,7 +124,10 @@ class Conditional:
                     "{%% if %s %%} True {%% else %%} False {%% endif %%}" % conditional,
                 ).strip() == "True"
 
-            result, result_type_name = templar.template(f'{{% set __cres = {conditional} %}}{{{{ [true if __cres else false, __cres.__class__.__name__] }}}}')
+            result, result_type_name = templar.template(
+                f'{{% set __cres = {conditional} %}}'
+                f'{{{{ [true if __cres else false, __cres | ansible.builtin.type_debug] }}}}'
+            )
 
             if result_type_name != 'bool':
                 if _allow_broken_conditionals:
