@@ -414,6 +414,7 @@ class Role(Base, Conditional, Taggable, CollectionSearch, Delegatable):
                         raise AnsibleParserError("Failed loading '%s' for role (%s) as it is not inside the expected role path: '%s'" %
                                                  (to_text(found), self._role_name, to_text(file_path)))
 
+                    self._loader.validate_user_path(found)
                     new_data = self._loader.load_from_file(found)
                     if new_data:
                         if data is not None and isinstance(new_data, Mapping):

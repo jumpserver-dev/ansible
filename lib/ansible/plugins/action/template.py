@@ -173,6 +173,7 @@ class ActionModule(ActionBase):
                 result_file = os.path.join(local_tempdir, os.path.basename(source))
                 with open(to_bytes(result_file, errors='surrogate_or_strict'), 'wb') as f:
                     f.write(to_bytes(resultant, encoding=output_encoding, errors='surrogate_or_strict'))
+                self._loader._tempfiles.add(os.path.realpath(result_file))
 
                 new_task.args.update(
                     dict(
@@ -191,6 +192,7 @@ class ActionModule(ActionBase):
                                                                         shared_loader_obj=self._shared_loader_obj)
                 result.update(copy_action.run(task_vars=task_vars))
             finally:
+                self._loader._tempfiles.discard(os.path.realpath(result_file))
                 shutil.rmtree(to_bytes(local_tempdir, errors='surrogate_or_strict'))
 
         except AnsibleAction as e:

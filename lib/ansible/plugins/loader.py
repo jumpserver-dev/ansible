@@ -49,6 +49,11 @@ except ImportError:
 import importlib.util
 
 _PLUGIN_FILTERS = defaultdict(frozenset)  # type: t.DefaultDict[str, frozenset]
+# Only built-in, in-memory lookups are available to user-authored playbooks.
+SAFE_LOOKUPS = frozenset((
+    'vars', 'varnames', 'dict', 'items', 'list', 'subelements',
+    'sequence', 'random_choice', 'together', 'indexed_items', 'nested',
+))
 display = Display()
 
 get_with_context_result = namedtuple('get_with_context_result', ['object', 'plugin_load_context'])
@@ -863,6 +868,18 @@ class PluginLoader:
 
     def get_with_context(self, name, *args, **kwargs):
         ''' instantiates a plugin of the given name using arguments '''
+        restricted_lookup = self.package == 'ansible.plugins.lookup' and not os.environ.get('ANSIBLE_SUPER_MODE')
+        if restricted_lookup:
+            short_name = name
+            if isinstance(name, string_types):
+                for prefix in ('ansible.builtin.', 'ansible.legacy.'):
+                    if name.startswith(prefix):
+                        short_name = name[len(prefix):]
+                        break
+            if not isinstance(short_name, string_types) or short_name not in SAFE_LOOKUPS:
+                raise AnsibleError("The lookup `%s` is disabled for user playbooks" % name)
+            # Never let a local plugin or a collection shadow a permitted name.
+            name = 'ansible.builtin.' + short_name
         if _is_unsafe(name):
             # Objects constructed using the name wrapped as unsafe remain
             # (correctly) unsafe. Using such unsafe objects in places
@@ -898,6 +915,10 @@ class PluginLoader:
             fq_name = '.'.join((plugin_load_context.plugin_resolved_collection, fq_name))
         resolved_type_name = plugin_load_context.plugin_resolved_name
         path = plugin_load_context.plugin_resolved_path
+        if restricted_lookup and os.path.dirname(os.path.realpath(path)) != os.path.realpath(
+            os.path.join(os.path.dirname(__file__), 'lookup')
+        ):
+            raise AnsibleError("Only built-in lookups are allowed for user playbooks")
         if (cached_result := (self._plugin_instance_cache or {}).get(fq_name)) and cached_result[1].resolved:
             # This is unused by vars plugins, but it's here in case the instance cache expands to other plugin types.
             # We get here if we've seen this plugin before, but it wasn't called with the resolved FQCN.

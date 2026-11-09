@@ -397,11 +397,13 @@ class ActionModule(ActionBase):
             raise Exception(err)
         finally:
             f.close()
+        self._loader._tempfiles.add(os.path.realpath(content_tempfile))
         return content_tempfile
 
     def _remove_tempfile_if_content_defined(self, content, content_tempfile):
         if content is not None:
             os.remove(content_tempfile)
+            self._loader._tempfiles.discard(os.path.realpath(content_tempfile))
 
     def run(self, tmp=None, task_vars=None):
         ''' handler for file transfer operations '''
