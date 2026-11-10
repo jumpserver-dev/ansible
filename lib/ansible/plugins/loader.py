@@ -32,7 +32,7 @@ from ansible.parsing.utils.yaml import from_yaml
 from ansible.parsing.yaml.loader import AnsibleLoader
 from ansible.plugins import get_plugin_class, MODULE_CACHE, PATH_CACHE, PLUGIN_PATH_CACHE
 from ansible.utils.collection_loader import AnsibleCollectionConfig, AnsibleCollectionRef
-from ansible.utils.collection_loader._collection_finder import _AnsibleCollectionFinder, _get_collection_metadata
+from ansible.utils.collection_loader._collection_finder import _AnsibleCollectionFinder, _get_collection_metadata, _is_trusted_plugin_source
 from ansible.utils.display import Display
 from ansible.utils.plugin_docs import add_fragments
 from ansible.utils.unsafe_proxy import _is_unsafe
@@ -57,6 +57,11 @@ SAFE_LOOKUPS = frozenset((
 display = Display()
 
 get_with_context_result = namedtuple('get_with_context_result', ['object', 'plugin_load_context'])
+
+
+def _validate_plugin_source(path):
+    if not _is_trusted_plugin_source(path):
+        raise AnsibleError('User-supplied Ansible plugin code is disabled: %s' % path)
 
 
 def get_all_plugin_loaders():
@@ -403,7 +408,7 @@ class PluginLoader:
         ''' Return a list of paths to search for plugins in '''
 
         paths_with_context = self._get_paths_with_context(subdirs=subdirs)
-        return [path_with_context.path for path_with_context in paths_with_context]
+        return [p.path for p in paths_with_context if _is_trusted_plugin_source(p.path)]
 
     def _load_config_defs(self, name, module, path):
         ''' Reads plugin docs to find configuration setting definitions, to push to config manager for later use '''
@@ -617,6 +622,8 @@ class PluginLoader:
         #         # TODO: need to smuggle these to the controller if we're in a worker context
         #         display.warning('[DEPRECATION WARNING] ' + dw)
 
+        if plugin_load_context.resolved and plugin_load_context.plugin_resolved_path:
+            _validate_plugin_source(plugin_load_context.plugin_resolved_path)
         return plugin_load_context
 
     # FIXME: name bikeshed
@@ -814,6 +821,7 @@ class PluginLoader:
     __contains__ = has_plugin
 
     def _load_module_source(self, name, path):
+        _validate_plugin_source(path)
 
         # avoid collisions across plugins
         if name.startswith('ansible_collections.'):
@@ -823,6 +831,7 @@ class PluginLoader:
 
         if full_name in sys.modules:
             # Avoids double loading, See https://github.com/ansible/ansible/issues/13110
+            _validate_plugin_source(sys.modules[full_name].__file__)
             return sys.modules[full_name]
 
         with warnings.catch_warnings():
@@ -903,6 +912,7 @@ class PluginLoader:
             # Short-circuit here if we've previously resolved this name.
             # This will need to be restricted if non-vars plugins start using the cache, since
             # some non-fqcn plugin need to be resolved again with the collections list.
+            _validate_plugin_source(cached_result[1].plugin_resolved_path)
             return get_with_context_result(*cached_result)
 
         plugin_load_context = self.find_plugin_with_context(name, collection_list=collection_list)
@@ -1038,6 +1048,8 @@ class PluginLoader:
 
         loaded_modules = set()
         for path in all_matches:
+            if not _is_trusted_plugin_source(path):
+                continue
 
             name = os.path.splitext(path)[0]
             basename = os.path.basename(name)
@@ -1169,6 +1181,7 @@ class Jinja2Loader(PluginLoader):
 
     def get_contained_plugins(self, collection, plugin_path, name):
 
+        _validate_plugin_source(plugin_path)
         plugins = []
 
         full_name = '.'.join(['ansible_collections', collection, 'plugins', self.type, name])
@@ -1219,6 +1232,7 @@ class Jinja2Loader(PluginLoader):
 
         # check for stuff loaded via legacy/builtin paths first
         if known_plugin := self._cached_non_collection_wrappers.get(name):
+            _validate_plugin_source(known_plugin._original_path)
             context.resolved = True
             context.plugin_resolved_name = name
             context.plugin_resolved_path = known_plugin._original_path
@@ -1351,9 +1365,9 @@ class Jinja2Loader(PluginLoader):
 
         self._ensure_non_collection_wrappers(*args, **kwargs)
         if path_only:
-            yield from (w._original_path for w in self._cached_non_collection_wrappers.values())
+            yield from (w._original_path for w in self._cached_non_collection_wrappers.values() if _is_trusted_plugin_source(w._original_path))
         else:
-            yield from (w for w in self._cached_non_collection_wrappers.values())
+            yield from (w for w in self._cached_non_collection_wrappers.values() if _is_trusted_plugin_source(w._original_path))
 
     def _ensure_non_collection_wrappers(self, *args, **kwargs):
         if self._cached_non_collection_wrappers:

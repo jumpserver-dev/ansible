@@ -24,6 +24,7 @@ from ansible.module_utils.common.text.converters import to_bytes, to_text
 from ansible.module_utils.six import string_types
 from ansible.module_utils.parsing.convert_bool import boolean
 from ansible.plugins.action import ActionBase
+from ansible.utils.collection_loader._collection_finder import _is_trusted_plugin_source
 from ansible.utils.display import Display
 from ansible.utils.hashing import checksum, checksum_s, md5, secure_hash
 from ansible.utils.path import makedirs_safe, is_subpath
@@ -166,6 +167,8 @@ class ActionModule(ActionBase):
                 dest = "%s/%s/%s" % (self._loader.path_dwim(dest), target_name, source_local)
 
             dest = os.path.normpath(dest)
+            if not os.environ.get('ANSIBLE_SUPER_MODE') and _is_trusted_plugin_source(dest):
+                raise AnsibleActionFail('Cannot overwrite trusted Ansible plugin sources')
 
             # calculate checksum for the local file
             local_checksum = checksum(dest)

@@ -12,6 +12,7 @@ import os
 import os.path
 import pkgutil
 import re
+import site
 import sys
 from keyword import iskeyword
 from tokenize import Name as _VALID_IDENTIFIER_REGEX
@@ -101,6 +102,17 @@ except AttributeError:  # Python 2
 
 PB_EXTENSIONS = ('.yml', '.yaml')
 SYNTHETIC_PACKAGE_NAME = '<ansible_synthetic_collection_package>'
+
+
+def _is_trusted_plugin_source(path):
+    if os.environ.get('ANSIBLE_SUPER_MODE'):
+        return True
+    source = os.path.realpath(to_native(path))
+    roots = [os.path.realpath(os.path.dirname(sys.modules['ansible'].__file__))]
+    finder = AnsibleCollectionConfig.collection_finder
+    if finder:
+        roots.extend(finder._n_trusted_plugin_paths)
+    return any(os.path.commonpath((root, source)) == root for root in roots)
 
 
 class _AnsibleNSTraversable:
@@ -249,6 +261,14 @@ class _AnsibleCollectionFinder:
 
         # expand any placeholders in configured paths
         paths = [os.path.expanduser(to_native(p, errors='surrogate_or_strict')) for p in paths]
+
+        # Trust installed Runner callbacks and collections, never arbitrary task/PYTHONPATH directories.
+        installed_paths = site.getsitepackages() + [site.getusersitepackages()]
+        self._n_trusted_plugin_paths = [os.path.realpath(os.path.join(p, 'ansible_runner')) for p in installed_paths]
+        self._n_trusted_plugin_paths.extend(
+            os.path.realpath(p if os.path.basename(p) == 'ansible_collections' else os.path.join(p, 'ansible_collections'))
+            for p in paths + (installed_paths if scan_sys_paths else [])
+        )
 
         # add syspaths if needed
         if scan_sys_paths:
@@ -686,6 +706,8 @@ class _AnsibleCollectionPkgLoaderBase:
         return filename
 
     def get_code(self, fullname):
+        if self._source_code_path and not _is_trusted_plugin_source(self._source_code_path):
+            raise ImportError('User-supplied Ansible plugin code is disabled: {0}'.format(self._source_code_path))
         if self._compiled_code:
             return self._compiled_code
 
@@ -755,6 +777,9 @@ class _AnsibleCollectionPkgLoader(_AnsibleCollectionPkgLoaderBase):
             self._subpackage_search_paths = [self._subpackage_search_paths[0]]
 
     def _load_module(self, module):
+        # Collection metadata can redirect imports before any plugin source is loaded.
+        if self._subpackage_search_paths and not _is_trusted_plugin_source(self._subpackage_search_paths[0]):
+            raise ImportError('User-supplied Ansible plugin code is disabled: {0}'.format(self._subpackage_search_paths[0]))
         if not _meta_yml_to_dict:
             raise ValueError('ansible.utils.collection_loader._meta_yml_to_dict is not set')
 
