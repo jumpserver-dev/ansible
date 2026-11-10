@@ -106,6 +106,7 @@ class ActionModule(ActionBase):
         if self.source_dir:
             self._set_dir_defaults()
             self._set_root_dir()
+            self._loader.validate_user_path(self.source_dir)
             if not path.exists(self.source_dir):
                 failed = True
                 err_msg = ('{0} directory does not exist'.format(to_native(self.source_dir)))
@@ -235,6 +236,7 @@ class ActionModule(ActionBase):
             failed = True
             err_msg = ('{0} does not have a valid extension: {1}'.format(to_native(filename), ', '.join(self.valid_extensions)))
         else:
+            self._loader.validate_user_path(filename)
             b_data, show_content = self._loader._get_file_contents(filename)
             data = to_text(b_data, errors='surrogate_or_strict')
 

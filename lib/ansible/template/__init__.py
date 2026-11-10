@@ -32,7 +32,7 @@ from numbers import Number
 from traceback import format_exc
 
 from jinja2.exceptions import TemplateSyntaxError, UndefinedError, SecurityError
-from jinja2.loaders import FileSystemLoader
+from jinja2.loaders import FileSystemLoader, split_template_path
 from jinja2.runtime import Context, StrictUndefined
 
 if os.environ.get('ANSIBLE_SUPER_MODE', ''):
@@ -64,7 +64,7 @@ from ansible.utils.unsafe_proxy import to_unsafe_text, wrap_var, AnsibleUnsafeTe
 display = Display()
 
 
-__all__ = ['Templar', 'generate_ansible_template_vars', 'is_disabled_lookup']
+__all__ = ['Templar', 'generate_ansible_template_vars']
 
 # Primitive Types which we don't want Jinja to convert to strings.
 NON_TEMPLATED_TYPES = (bool, Number)
@@ -75,17 +75,6 @@ JINJA2_BEGIN_TOKENS = frozenset(('variable_begin', 'block_begin', 'comment_begin
 JINJA2_END_TOKENS = frozenset(('variable_end', 'block_end', 'comment_end', 'raw_end'))
 
 RANGE_TYPE = type(range(0))
-DISABLED_LOOKUPS = frozenset(('file', 'pipe', 'env', 'password', 'lines'))
-
-
-def is_disabled_lookup(name):
-    if not isinstance(name, string_types):
-        return False
-
-    name = name.strip().lower()
-    short_name = name.rsplit('.', 1)[-1]
-    return short_name in DISABLED_LOOKUPS
-
 
 def generate_ansible_template_vars(path, fullpath=None, dest_path=None):
 
@@ -572,6 +561,22 @@ class AnsibleNativeEnvironment(AnsibleEnvironment):
         self.finalize = _unroll_iterator(_fail_on_undefined)
 
 
+class AnsibleFileSystemLoader(FileSystemLoader):
+    def __init__(self, loader):
+        super().__init__(loader.get_basedir() if loader else '.')
+        self._data_loader = loader
+
+    def get_source(self, environment, template):
+        # Jinja includes bypass DataLoader's resource lookup.
+        if self._data_loader:
+            for directory in self.searchpath:
+                filename = os.path.join(directory, *split_template_path(template))
+                if os.path.isfile(filename):
+                    self._data_loader.validate_user_path(filename)
+                    break
+        return super().get_source(environment, template)
+
+
 class Templar:
     '''
     The main class for templating, with the main entry-point of template().
@@ -587,7 +592,7 @@ class Templar:
 
         self.environment = environment_class(
             extensions=self._get_extensions(),
-            loader=FileSystemLoader(loader.get_basedir() if loader else '.'),
+            loader=AnsibleFileSystemLoader(loader),
         )
         self.environment.template_class.environment_class = environment_class
 
@@ -843,9 +848,6 @@ class Templar:
         return self._lookup(name, *args, **kwargs)
 
     def _lookup(self, name, /, *args, **kwargs):
-        if is_disabled_lookup(name):
-            raise AnsibleError("The lookup `%s` is disabled from templating" % name)
-
         instance = lookup_loader.get(name, loader=self._loader, templar=self)
 
         if instance is None:

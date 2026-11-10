@@ -54,6 +54,7 @@ class DataLoader:
     def __init__(self):
 
         self._basedir = '.'
+        self._playbook_root = None
 
         # NOTE: not effective with forks as the main copy does not get updated.
         # avoids rereading files
@@ -171,6 +172,16 @@ class DataLoader:
     def get_basedir(self) -> str:
         ''' returns the current basedir '''
         return self._basedir
+
+    def validate_user_path(self, file_name: str) -> None:
+        """Restrict playbook resources without restricting inventory or runtime files."""
+        if self._playbook_root is None or os.environ.get('ANSIBLE_SUPER_MODE'):
+            return
+        path = os.path.realpath(self.path_dwim(file_name))
+        if any(path == os.path.realpath(to_text(temp)) for temp in self._tempfiles):
+            return
+        if os.path.commonpath((self._playbook_root, path)) != self._playbook_root:
+            raise AnsibleParserError("Controller file access outside the playbook project is denied")
 
     def set_basedir(self, basedir: str) -> None:
         ''' sets the base directory, used to find files when a relative path is given '''
@@ -339,6 +350,7 @@ class DataLoader:
         if result is None:
             raise AnsibleFileNotFound(file_name=source, paths=[to_native(p) for p in search])
 
+        self.validate_user_path(result)
         return result
 
     def _create_content_tempfile(self, content: str | bytes) -> str:
@@ -366,6 +378,7 @@ class DataLoader:
             raise AnsibleParserError("Invalid filename: '%s'" % to_native(file_path))
 
         b_file_path = to_bytes(file_path, errors='surrogate_or_strict')
+        self.validate_user_path(file_path)
         if not self.path_exists(b_file_path) or not self.is_file(b_file_path):
             raise AnsibleFileNotFound(file_name=file_path)
 

@@ -851,6 +851,7 @@ class StrategyBase:
         '''
         display.debug("loading included file: %s" % included_file._filename)
         try:
+            self._loader.validate_user_path(included_file._filename)
             data = self._loader.load_from_file(included_file._filename)
             if data is None:
                 return []

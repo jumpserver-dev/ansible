@@ -48,6 +48,8 @@ class Playbook:
 
     @staticmethod
     def load(file_name, variable_manager=None, loader=None):
+        # Imports may change basedir, but cannot widen the top-level project's boundary.
+        loader._playbook_root = os.path.realpath(os.path.dirname(os.path.abspath(file_name)))
         pb = Playbook(loader=loader)
         pb._load_playbook_data(file_name=file_name, variable_manager=variable_manager)
         return pb
@@ -63,6 +65,7 @@ class Playbook:
         cur_basedir = self._loader.get_basedir()
         self._loader.set_basedir(self._basedir)
 
+        self._loader.validate_user_path(os.path.join(self._basedir, os.path.basename(file_name)))
         add_all_plugin_dirs(self._basedir)
 
         self._file_name = file_name
